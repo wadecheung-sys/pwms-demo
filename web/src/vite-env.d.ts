@@ -1,0 +1,28 @@
+/// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_USE_MOCK: string
+  readonly VITE_API_BASE_URL: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}
+
+declare module '*.vue' {
+  import type { DefineComponent } from 'vue'
+  const component: DefineComponent<object, object, unknown>
+  export default component
+}
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    title?: string
+    icon?: string
+    hidden?: boolean
+    category?: import('@/types').AssetCategory
+    subModule?: import('@/types').SubModule
+  }
+}
+
+export {}
