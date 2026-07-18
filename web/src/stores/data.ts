@@ -37,8 +37,8 @@ import {
 import { clearBusinessData, loadJson, saveJson } from '@/utils/pwms/persist'
 import { calcQuotaLimits, calcStandardQty } from '@/utils/pwms/quota'
 
-/** 业务数据结构版本；v5 盘点过账/报废/单据重提 */
-export const BUSINESS_SCHEMA_VERSION = 5
+/** 业务数据结构版本；v6 补充申请单草稿/驳回示例与撤回 */
+export const BUSINESS_SCHEMA_VERSION = 6
 
 interface BusinessData {
   schemaVersion: number
@@ -586,6 +586,18 @@ export const useDataStore = defineStore('data', () => {
     bill.approver = undefined
     bill.approveTime = undefined
     bill.approveRemark = undefined
+  }
+
+  /** 申请人撤回待审批单据为草稿 */
+  function withdrawStockBill(id: string) {
+    const bill = data.value.stockBills.find((b) => b.id === id)
+    if (!bill) throw new Error('单据不存在')
+    if (bill.status !== '待审批') throw new Error('仅待审批单据可撤回')
+    bill.status = '草稿'
+    bill.approver = undefined
+    bill.approveTime = undefined
+    bill.approveRemark = undefined
+    bill.rejectReason = undefined
   }
 
   function approveStockBill(id: string, approver: string, remark?: string) {
@@ -1357,6 +1369,7 @@ export const useDataStore = defineStore('data', () => {
     submitStockBill,
     updateStockBill,
     resubmitStockBill,
+    withdrawStockBill,
     approveStockBill,
     rejectStockBill,
     confirmStockBill,

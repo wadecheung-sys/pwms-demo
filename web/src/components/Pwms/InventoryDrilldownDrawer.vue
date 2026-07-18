@@ -112,6 +112,7 @@ function submitLineCount(row: InventoryLineItem, val: number | null) {
               </div>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="暂无下级任务" /></template>
         </el-table>
       </template>
 
@@ -145,6 +146,7 @@ function submitLineCount(row: InventoryLineItem, val: number | null) {
               >{{ row.status }}</el-tag>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="暂无盘点明细" /></template>
         </el-table>
       </template>
     </template>

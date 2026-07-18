@@ -8,6 +8,7 @@ import PageShell from '@/components/Pwms/PageShell.vue'
 import PageToolbar from '@/components/Pwms/PageToolbar.vue'
 import InventoryDrilldownDrawer from '@/components/Pwms/InventoryDrilldownDrawer.vue'
 import AssetDetailDrawer from '@/components/Pwms/AssetDetailDrawer.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { AssetCategory, AssetLedger, FaultRecord, InventoryTask, SubModule } from '@/types'
 import { categoryLabels, subModuleLabels } from '@/types'
 import { useDataStore } from '@/stores/data'
@@ -709,16 +710,11 @@ function onDialogOpen() {
         <template #empty><el-empty description="暂无盘点任务" /></template>
       </el-table>
 
-      <div v-if="pageTotal > 0" class="table-pagination">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="pageTotal"
-          layout="total, sizes, prev, pager, next"
-          background
-        />
-      </div>
+      <TablePagination
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :total="pageTotal"
+      />
   </PageShell>
 
     <InventoryDrilldownDrawer v-model:visible="drilldownVisible" :task="drilldownTask" />
@@ -823,6 +819,14 @@ function onDialogOpen() {
 
     <!-- 盘点下发 -->
     <el-dialog v-model="dispatchVisible" title="下发盘点任务" width="520px" destroy-on-close>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        class="convert-tip"
+        title="将按组织树自动拆分至各生产仓，并生成资产盘点明细"
+        style="margin-bottom: 16px"
+      />
       <el-form ref="dispatchFormRef" :model="dispatchForm" :rules="dispatchRules" label-width="100px">
         <el-form-item label="任务名称" prop="taskName"><el-input v-model="dispatchForm.taskName" /></el-form-item>
         <el-form-item label="生产中心" prop="centerOrgId">
@@ -834,7 +838,6 @@ function onDialogOpen() {
         <el-form-item label="截止日期" prop="deadline">
           <el-date-picker v-model="dispatchForm.deadline" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
-        <el-alert type="info" :closable="false" show-icon title="将按组织树自动拆分至各生产仓，并生成资产盘点明细" />
       </el-form>
       <template #footer>
         <el-button @click="dispatchVisible = false">取消</el-button>
@@ -861,12 +864,6 @@ function onDialogOpen() {
 </template>
 
 <style scoped lang="scss">
-.table-pagination {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
 .convert-tip {
   margin-bottom: 0;
 }

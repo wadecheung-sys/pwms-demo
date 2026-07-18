@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
+import { usePagination } from '@/composables/usePagination'
 import { hasPermission } from '@/utils/pwms/permission'
 import type { AlertItem } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 
 const dataStore = useDataStore()
 const userStore = useUserStore()
@@ -25,6 +27,7 @@ const rows = computed(() =>
     return true
   }),
 )
+const { currentPage, pageSize, total, pageData } = usePagination(rows, 10)
 
 function levelType(level: string) {
   if (level === '严重') return 'danger'
@@ -65,7 +68,7 @@ function handle(row: AlertItem, status: '已处理' | '已忽略') {
       </template>
     </PageHeader>
 
-      <el-table :data="rows" border stripe>
+      <el-table :data="pageData" border stripe>
         <el-table-column prop="createTime" label="时间" width="170" />
         <el-table-column prop="category" label="类型" width="80" />
         <el-table-column prop="level" label="级别" width="80">
@@ -88,6 +91,8 @@ function handle(row: AlertItem, status: '已处理' | '已忽略') {
             </div>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无告警" /></template>
       </el-table>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 </template>

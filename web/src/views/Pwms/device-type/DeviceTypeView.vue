@@ -5,8 +5,10 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import FilterBar from '@/components/Pwms/FilterBar.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { FilterField } from '@/components/Pwms/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
+import { usePagination } from '@/composables/usePagination'
 import { useDataStore } from '@/stores/data'
 import { matchExact, matchKeyword, uniqueOptions } from '@/utils/pwms/filter'
 import type { AssetCategory, DeviceType } from '@/types'
@@ -32,6 +34,7 @@ const filterFields = computed<FilterField[]>(() => [
 ])
 
 const tableData = computed(() => filterListWithCount(categoryData.value))
+const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
 const form = reactive({ code: '', name: '', unit: '', description: '' })
 const rules: FormRules = {
@@ -85,7 +88,7 @@ async function handleDelete(row: DeviceType) {
 
     <FilterBar :fields="filterFields" :model-value="draft" :result-count="resultCount" @update:model-value="Object.assign(draft, $event)" @search="search" @reset="reset" />
 
-    <el-table :data="tableData" stripe border>
+    <el-table :data="pageData" stripe border>
       <el-table-column prop="code" label="类型编码" width="110" />
       <el-table-column prop="name" label="类型名称" width="120" />
       <el-table-column prop="unit" label="计量单位" width="90" align="center" />
@@ -98,7 +101,9 @@ async function handleDelete(row: DeviceType) {
           </div>
         </template>
       </el-table-column>
+      <template #empty><el-empty description="暂无设备类型" /></template>
     </el-table>
+    <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="dialogVisible" :title="editingId ? '编辑设备类型' : '新增设备类型'" width="520px" destroy-on-close>

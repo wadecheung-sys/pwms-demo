@@ -4,8 +4,10 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import FilterBar from '@/components/Pwms/FilterBar.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageTip from '@/components/Pwms/PageTip.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { FilterField } from '@/components/Pwms/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
+import { usePagination } from '@/composables/usePagination'
 import { useDataStore } from '@/stores/data'
 import { matchExact, matchKeyword } from '@/utils/pwms/filter'
 import {
@@ -55,6 +57,7 @@ const filterFields = computed<FilterField[]>(() => [
 
 const treeData = computed(() => dataStore.getOrgTree())
 const tableData = computed(() => filterListWithCount(dataStore.organizations))
+const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
 const form = reactive({
   name: '',
@@ -218,7 +221,7 @@ async function handleDelete(row: Organization) {
           @reset="reset"
         />
 
-        <el-table :data="tableData" row-key="id" stripe border>
+        <el-table :data="pageData" row-key="id" stripe border>
           <el-table-column prop="code" label="组织编码" width="120" />
           <el-table-column prop="name" label="组织名称" min-width="160" />
           <el-table-column prop="type" label="类型" width="110" align="center">
@@ -239,7 +242,9 @@ async function handleDelete(row: Organization) {
               </div>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="暂无组织数据" /></template>
         </el-table>
+        <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
       </div>
     </div>
 

@@ -5,6 +5,8 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import FilterBar from '@/components/Pwms/FilterBar.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
+import { usePagination } from '@/composables/usePagination'
 import type { FilterField } from '@/components/Pwms/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
 import { useDataStore } from '@/stores/data'
@@ -37,7 +39,7 @@ const filterFields = computed<FilterField[]>(() => [
 ])
 
 const tableData = computed(() => filterListWithCount(categoryData.value))
-
+const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 const form = reactive({ name: '', contact: '', phone: '', address: '', qualification: '' })
 const rules: FormRules = {
   name: [{ required: true, message: '请输入厂家名称', trigger: 'blur' }],
@@ -81,7 +83,7 @@ async function handleDelete(row: Manufacturer) {
 
     <FilterBar :fields="filterFields" :model-value="draft" :result-count="resultCount" @update:model-value="Object.assign(draft, $event)" @search="search" @reset="reset" />
 
-    <el-table :data="tableData" stripe border>
+    <el-table :data="pageData" stripe border>
       <el-table-column prop="name" label="厂家名称" min-width="160" />
       <el-table-column prop="contact" label="联系人" width="100" />
       <el-table-column prop="phone" label="联系电话" width="130" />
@@ -95,7 +97,9 @@ async function handleDelete(row: Manufacturer) {
           </div>
         </template>
       </el-table-column>
+      <template #empty><el-empty description="暂无厂家数据" /></template>
     </el-table>
+    <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="dialogVisible" :title="editingId ? '编辑厂家' : '新增厂家'" width="520px" destroy-on-close>

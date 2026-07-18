@@ -5,8 +5,10 @@ import FilterBar from '@/components/Pwms/FilterBar.vue'
 import PageToolbar from '@/components/Pwms/PageToolbar.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { FilterField } from '@/components/Pwms/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
+import { usePagination } from '@/composables/usePagination'
 import { useDataScope } from '@/composables/useDataScope'
 import { useDataStore } from '@/stores/data'
 import { matchExact, matchKeyword } from '@/utils/pwms/filter'
@@ -119,6 +121,7 @@ const filterFields = computed<FilterField[]>(() => [
 ])
 
 const tableData = computed(() => filterListWithCount(scopedSites.value))
+const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
 const exportColumns = [
   { key: 'code', label: '仓室编码' },
@@ -313,7 +316,7 @@ async function handleDelete(row: WarehouseSite) {
         @reset="reset"
       />
 
-      <el-table :data="tableData" row-key="id" stripe border>
+      <el-table :data="pageData" row-key="id" stripe border>
         <el-table-column prop="code" label="仓室编码" width="120" fixed="left" />
         <el-table-column prop="name" label="仓室名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="location" label="仓库地点" min-width="200" show-overflow-tooltip />
@@ -347,7 +350,9 @@ async function handleDelete(row: WarehouseSite) {
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无仓室数据" /></template>
       </el-table>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog

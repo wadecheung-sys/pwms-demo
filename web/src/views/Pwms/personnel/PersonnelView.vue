@@ -5,8 +5,10 @@ import FilterBar from '@/components/Pwms/FilterBar.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
 import PageToolbar from '@/components/Pwms/PageToolbar.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { FilterField } from '@/components/Pwms/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
+import { usePagination } from '@/composables/usePagination'
 import { useDataScope } from '@/composables/useDataScope'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
@@ -63,6 +65,7 @@ const filterFields = computed<FilterField[]>(() => [
 ])
 
 const tableData = computed(() => filterListWithCount(scopePersons(dataStore.persons)))
+const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
 const exportColumns = [
   { key: 'employeeNo', label: '工号' },
@@ -134,7 +137,7 @@ async function handleDelete(row: Person) {
 
     <FilterBar :fields="filterFields" :model-value="draft" :result-count="resultCount" @update:model-value="Object.assign(draft, $event)" @search="search" @reset="reset" />
 
-    <el-table :data="tableData" stripe border>
+    <el-table :data="pageData" stripe border>
       <el-table-column prop="employeeNo" label="工号" width="100" />
       <el-table-column prop="name" label="姓名" width="100" />
       <el-table-column prop="orgName" label="所属组织" min-width="130" />
@@ -154,7 +157,9 @@ async function handleDelete(row: Person) {
           <span v-else class="text-muted">—</span>
         </template>
       </el-table-column>
+      <template #empty><el-empty description="暂无人员数据" /></template>
     </el-table>
+    <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="dialogVisible" :title="editingId ? '编辑人员' : '新增人员'" width="520px" destroy-on-close>

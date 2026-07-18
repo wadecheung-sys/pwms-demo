@@ -10,6 +10,8 @@ import { isInventoryCenterOrg } from '@/utils/pwms/org'
 import type { AssetCategory, InventoryPageAction } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
+import { usePagination } from '@/composables/usePagination'
 
 const categoryOptions: { value: AssetCategory | 'all'; label: string }[] = [
   { value: 'spare', label: '备品备件' },
@@ -93,6 +95,18 @@ const activeTaskId = ref('')
 const lines = computed(() =>
   dataStore.inventoryLineItems.filter((l) => l.taskId === activeTaskId.value),
 )
+const {
+  currentPage: taskPage,
+  pageSize: taskPageSize,
+  total: taskTotal,
+  pageData: taskPageData,
+} = usePagination(execTasks, 10)
+const {
+  currentPage: linePage,
+  pageSize: linePageSize,
+  total: lineTotal,
+  pageData: linePageData,
+} = usePagination(lines, 10)
 
 const scanVisible = ref(false)
 const photoVisible = ref(false)
@@ -301,6 +315,7 @@ const pageDesc = computed(() => {
           <el-table-column prop="status" label="状态" width="100" />
           <el-table-column prop="deadline" label="截止" width="120" />
           <el-table-column prop="createTime" label="下达时间" width="170" />
+          <template #empty><el-empty description="暂无盘点计划" /></template>
         </el-table>
       </template>
 
@@ -331,6 +346,7 @@ const pageDesc = computed(() => {
             </template>
           </el-table-column>
           <el-table-column prop="deadline" label="截止" width="120" />
+          <template #empty><el-empty description="暂无进度数据" /></template>
         </el-table>
       </template>
 
@@ -338,60 +354,68 @@ const pageDesc = computed(() => {
         <el-row :gutter="16">
           <el-col :span="8">
             <el-table
-              :data="execTasks"
+              :data="taskPageData"
+              stripe
+              border
               highlight-current-row
-              height="520"
+              height="480"
               @current-change="(r: any) => (activeTaskId = r?.id || '')"
             >
               <el-table-column prop="taskName" label="执行任务" min-width="160" />
               <el-table-column prop="status" label="状态" width="80" />
+              <template #empty><el-empty description="暂无执行任务" :image-size="64" /></template>
             </el-table>
+            <TablePagination v-model:page="taskPage" v-model:page-size="taskPageSize" :total="taskTotal" />
           </el-col>
           <el-col :span="16">
             <el-empty v-if="!activeTaskId" description="请选择左侧执行任务" />
-            <el-table v-else :data="lines" border stripe height="520">
-              <el-table-column prop="assetCode" label="编码" width="120" />
-              <el-table-column prop="assetName" label="名称" min-width="100" />
-              <el-table-column prop="bookQuantity" label="账面" width="70" />
-              <el-table-column prop="actualQuantity" label="实盘" width="70" />
-              <el-table-column prop="status" label="结果" width="80">
-                <template #default="{ row }">
-                  <el-tag
-                    size="small"
-                    :type="row.status === '有差异' ? 'danger' : row.status === '已盘' ? 'success' : 'info'"
-                  >
-                    {{ row.status }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="过账" width="90">
-                <template #default="{ row }">
-                  <el-tag v-if="row.adjusted" size="small" type="success">已过账</el-tag>
-                  <span v-else-if="row.status === '有差异'" class="muted">待过账</span>
-                  <span v-else class="muted">—</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="checkMethod" label="方式" width="80" />
-              <el-table-column v-if="canExecute" label="操作" width="220">
-                <template #default="{ row }">
-                  <div class="table-actions">
-                    <template v-if="!row.adjusted">
+            <template v-else>
+              <el-table :data="linePageData" border stripe height="480">
+                <el-table-column prop="assetCode" label="编码" width="120" />
+                <el-table-column prop="assetName" label="名称" min-width="100" />
+                <el-table-column prop="bookQuantity" label="账面" width="70" />
+                <el-table-column prop="actualQuantity" label="实盘" width="70" />
+                <el-table-column prop="status" label="结果" width="80">
+                  <template #default="{ row }">
+                    <el-tag
+                      size="small"
+                      :type="row.status === '有差异' ? 'danger' : row.status === '已盘' ? 'success' : 'info'"
+                    >
+                      {{ row.status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="过账" width="90">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.adjusted" size="small" type="success">已过账</el-tag>
+                    <span v-else-if="row.status === '有差异'" class="muted">待过账</span>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="checkMethod" label="方式" width="80" />
+                <el-table-column label="操作" width="220">
+                  <template #default="{ row }">
+                    <div v-if="canExecute && !row.adjusted" class="table-actions">
                       <el-button type="primary" size="small" plain @click="openScan(row.id, row.bookQuantity)">扫码</el-button>
                       <el-button type="primary" size="small" plain @click="openPhoto(row.id, row.bookQuantity)">拍照</el-button>
-                    </template>
-                    <el-button
-                      v-if="row.status === '有差异' && !row.adjusted"
-                      type="warning"
-                      size="small"
-                      plain
-                      @click="doPostLine(row.id)"
-                    >
-                      过账
-                    </el-button>
-                  </div>
-                </template>
-              </el-table-column>
-            </el-table>
+                      <el-button
+                        v-if="row.status === '有差异'"
+                        type="warning"
+                        size="small"
+                        plain
+                        @click="doPostLine(row.id)"
+                      >
+                        过账
+                      </el-button>
+                    </div>
+                    <span v-else-if="row.adjusted" class="text-muted">已完成</span>
+                    <span v-else class="text-muted">—</span>
+                  </template>
+                </el-table-column>
+                <template #empty><el-empty description="暂无盘点明细" /></template>
+              </el-table>
+              <TablePagination v-model:page="linePage" v-model:page-size="linePageSize" :total="lineTotal" />
+            </template>
           </el-col>
         </el-row>
       </template>

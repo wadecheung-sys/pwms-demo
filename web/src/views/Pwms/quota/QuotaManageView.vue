@@ -3,9 +3,11 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataStore } from '@/stores/data'
+import { usePagination } from '@/composables/usePagination'
 import type { QuotaFormulaType } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 
 const route = useRoute()
 const dataStore = useDataStore()
@@ -136,6 +138,13 @@ const titles = {
   results: '定额测算结果',
   catalog: '一仓一策目录',
 }
+
+const listSource = computed(() => {
+  if (action.value === 'rules') return dataStore.quotaRules
+  if (action.value === 'params') return dataStore.orgDeviceParams
+  return dataStore.quotaResults
+})
+const { currentPage, pageSize, total, pageData } = usePagination(listSource, 10)
 </script>
 
 <template>
@@ -150,7 +159,7 @@ const titles = {
       </template>
     </PageHeader>
 
-      <el-table v-if="action === 'rules'" :data="dataStore.quotaRules" border stripe>
+      <el-table v-if="action === 'rules'" :data="pageData" border stripe>
         <el-table-column prop="name" label="规则名称" min-width="160" />
         <el-table-column prop="typeName" label="品类" width="100" />
         <el-table-column prop="formulaType" label="公式" width="110">
@@ -171,9 +180,10 @@ const titles = {
             </div>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无定额规则" /></template>
       </el-table>
 
-      <el-table v-else-if="action === 'params'" :data="dataStore.orgDeviceParams" border stripe>
+      <el-table v-else-if="action === 'params'" :data="pageData" border stripe>
         <el-table-column prop="orgName" label="单位" min-width="120" />
         <el-table-column prop="warehouseName" label="仓室" min-width="140" />
         <el-table-column label="规则" min-width="140">
@@ -191,9 +201,10 @@ const titles = {
             </div>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无定额参数" /></template>
       </el-table>
 
-      <el-table v-else :data="dataStore.quotaResults" border stripe>
+      <el-table v-else :data="pageData" border stripe>
         <el-table-column prop="orgName" label="单位" min-width="120" />
         <el-table-column prop="warehouseName" label="仓室" min-width="140" />
         <el-table-column prop="typeName" label="品类" width="100" />
@@ -220,7 +231,9 @@ const titles = {
           </template>
         </el-table-column>
         <el-table-column prop="calculatedAt" label="测算时间" width="170" />
+        <template #empty><el-empty description="暂无测算结果" /></template>
       </el-table>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="ruleDialog" title="定额规则" width="560px">

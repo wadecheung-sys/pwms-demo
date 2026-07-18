@@ -5,11 +5,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
 import { useDataScope } from '@/composables/useDataScope'
+import { usePagination } from '@/composables/usePagination'
 import { hasPermission } from '@/utils/pwms/permission'
 import type { AssetCategory, InOutPageAction, InboundScene, OutboundScene, StockBill } from '@/types'
 import { inboundSceneOptions, outboundSceneOptions } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 
 const route = useRoute()
 const dataStore = useDataStore()
@@ -77,6 +79,36 @@ const form = reactive({
 
 const isInbound = computed(() => action.value.startsWith('in-'))
 const isApplyPage = computed(() => action.value === 'in-apply' || action.value === 'out-apply')
+const isApprovePage = computed(() => action.value.includes('approve'))
+const isConfirmPage = computed(() => action.value.includes('confirm'))
+
+/** 单据列表是否展示操作列 */
+const showBillOpColumn = computed(() => {
+  if (isApplyPage.value) return canApply.value
+  if (isApprovePage.value) return canApprove.value
+  if (isConfirmPage.value) return canConfirm.value
+  return false
+})
+
+function canEditApplyBill(row: StockBill) {
+  return isApplyPage.value && canApply.value && (row.status === '草稿' || row.status === '已驳回')
+}
+
+function canWithdrawApplyBill(row: StockBill) {
+  return isApplyPage.value && canApply.value && row.status === '待审批'
+}
+
+async function doWithdraw(row: StockBill) {
+  try {
+    await ElMessageBox.confirm(`确定撤回申请单 ${row.billNo}？撤回后可修改再提交。`, '撤回确认', {
+      type: 'warning',
+    })
+    dataStore.withdrawStockBill(row.id)
+    ElMessage.success('已撤回为草稿')
+  } catch (e) {
+    if ((e as string) !== 'cancel') ElMessage.error((e as Error).message || '已取消')
+  }
+}
 
 function openCreate() {
   editingId.value = null
@@ -233,6 +265,14 @@ const shortageRows = computed(() =>
   }),
 )
 
+const listSource = computed(() => {
+  if (action.value === 'stock-status') return scopedLedgers.value
+  if (action.value === 'shortage') return shortageRows.value
+  if (action.value === 'inout-log') return logs.value
+  return bills.value
+})
+const { currentPage, pageSize, total, pageData } = usePagination(listSource, 10)
+
 const statusTag = (s: string) => {
   if (s === '已确认') return 'success'
   if (s === '待审批' || s === '待确认') return 'warning'
@@ -264,7 +304,7 @@ const dialogTitle = computed(() => {
 
     <!-- 在库状态 -->
     <template v-if="action === 'stock-status'">
-        <el-table :data="scopedLedgers" stripe border>
+        <el-table :data="pageData" stripe border>
           <el-table-column prop="assetCode" label="装备编码" width="130" />
           <el-table-column prop="physicalId" label="实物ID" width="130" />
           <el-table-column prop="name" label="名称" min-width="120" />
@@ -276,13 +316,14 @@ const dialogTitle = computed(() => {
           <el-table-column prop="status" label="台账状态" width="90" />
           <el-table-column prop="disposeStatus" label="处置状态" width="90" />
           <el-table-column prop="checkDueStatus" label="校验" width="90" />
+          <template #empty><el-empty description="暂无在库物资" /></template>
         </el-table>
       </template>
 
       <!-- 缺额 -->
       <template v-else-if="action === 'shortage'">
         <el-empty v-if="!shortageRows.length" description="暂无缺额，请先在定额管理中测算" />
-        <el-table v-else :data="shortageRows" stripe border>
+        <el-table v-else :data="pageData" stripe border>
           <el-table-column prop="orgName" label="单位" min-width="120" />
           <el-table-column prop="warehouseName" label="仓室" min-width="140" />
           <el-table-column prop="typeName" label="品类" width="100" />
@@ -300,12 +341,13 @@ const dialogTitle = computed(() => {
               </div>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="暂无缺额" /></template>
         </el-table>
       </template>
 
       <!-- 流水 -->
       <template v-else-if="action === 'inout-log'">
-        <el-table :data="logs" stripe border>
+        <el-table :data="pageData" stripe border>
           <el-table-column prop="operateTime" label="时间" width="170" />
           <el-table-column prop="type" label="类型" width="80" />
           <el-table-column prop="scene" label="场景" width="100" />
@@ -316,12 +358,13 @@ const dialogTitle = computed(() => {
           <el-table-column prop="workOrderNo" label="工作票/工单" width="140" />
           <el-table-column prop="operator" label="操作人" width="90" />
           <el-table-column prop="reason" label="事由" min-width="120" />
+          <template #empty><el-empty description="暂无出入库记录" /></template>
         </el-table>
       </template>
 
       <!-- 单据 -->
       <template v-else>
-        <el-table :data="bills" stripe border>
+        <el-table :data="pageData" stripe border>
           <el-table-column prop="billNo" label="单号" width="150" />
           <el-table-column prop="scene" label="场景" width="100" />
           <el-table-column prop="assetName" label="物资" min-width="120" />
@@ -335,36 +378,34 @@ const dialogTitle = computed(() => {
           </el-table-column>
           <el-table-column prop="rejectReason" label="驳回原因" min-width="120" show-overflow-tooltip />
           <el-table-column prop="createTime" label="创建时间" width="170" />
-          <el-table-column label="操作" width="300" fixed="right">
+          <el-table-column v-if="showBillOpColumn" label="操作" width="300" fixed="right">
             <template #default="{ row }">
-              <div class="table-actions">
-                <template v-if="isApplyPage && canApply && (row.status === '草稿' || row.status === '已驳回')">
-                  <el-button type="primary" size="small" plain @click="openEdit(row)">修改重提</el-button>
-                  <el-button type="primary" size="small" plain @click="doResubmit(row)">直接重提</el-button>
-                  <el-button type="danger" size="small" plain @click="doRemove(row)">删除</el-button>
-                </template>
-                <template v-if="action.includes('approve') && canApprove">
-                  <el-button type="success" size="small" plain @click="doApprove(row)">通过</el-button>
-                  <el-button type="danger" size="small" plain @click="doReject(row)">驳回</el-button>
-                </template>
-                <el-button
-                  v-if="action.includes('confirm') && canConfirm"
-                  type="primary"
-                  size="small"
-                  plain
-                  @click="openConfirm(row)"
-                >
-                  扫码确认
-                </el-button>
+              <div v-if="canEditApplyBill(row)" class="table-actions">
+                <el-button type="primary" size="small" plain @click="openEdit(row)">修改重提</el-button>
+                <el-button type="primary" size="small" plain @click="doResubmit(row)">直接重提</el-button>
+                <el-button type="danger" size="small" plain @click="doRemove(row)">删除</el-button>
               </div>
+              <div v-else-if="canWithdrawApplyBill(row)" class="table-actions">
+                <el-button type="warning" size="small" plain @click="doWithdraw(row)">撤回</el-button>
+              </div>
+              <div v-else-if="isApprovePage && canApprove" class="table-actions">
+                <el-button type="success" size="small" plain @click="doApprove(row)">通过</el-button>
+                <el-button type="danger" size="small" plain @click="doReject(row)">驳回</el-button>
+              </div>
+              <div v-else-if="isConfirmPage && canConfirm" class="table-actions">
+                <el-button type="primary" size="small" plain @click="openConfirm(row)">扫码确认</el-button>
+              </div>
+              <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="暂无申请单据" /></template>
         </el-table>
       </template>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
-      <p class="dialog-hint">提交后进入审批；驳回后可修改再提交。确认环节需扫码校验实物 ID。</p>
+      <p class="dialog-hint">提交后进入审批；驳回后可修改再提交。</p>
       <el-form label-width="100px">
         <el-form-item label="物资">
           <el-select v-model="form.assetCode" filterable style="width: 100%">

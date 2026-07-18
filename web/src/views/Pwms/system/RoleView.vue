@@ -4,8 +4,10 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import FilterBar from '@/components/Pwms/FilterBar.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { FilterField } from '@/components/Pwms/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
+import { usePagination } from '@/composables/usePagination'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
 import { matchKeyword } from '@/utils/pwms/filter'
@@ -31,6 +33,7 @@ const filterFields = computed<FilterField[]>(() => [
 ])
 
 const tableData = computed(() => filterListWithCount(dataStore.roles))
+const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
 const form = reactive({ name: '', code: '', description: '' })
 const rules: FormRules = {
@@ -107,7 +110,7 @@ async function handleDelete(row: Role) {
 
     <FilterBar :fields="filterFields" :model-value="draft" :result-count="resultCount" @update:model-value="Object.assign(draft, $event)" @search="search" @reset="reset" />
 
-    <el-table :data="tableData" stripe border>
+    <el-table :data="pageData" stripe border>
       <el-table-column prop="name" label="角色名称" width="140" />
       <el-table-column prop="code" label="角色编码" width="160" />
       <el-table-column prop="description" label="描述" min-width="200" />
@@ -128,7 +131,9 @@ async function handleDelete(row: Role) {
           </div>
         </template>
       </el-table-column>
+      <template #empty><el-empty description="暂无角色数据" /></template>
     </el-table>
+    <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="dialogVisible" :title="editingId ? '编辑角色' : '新增角色'" width="520px" destroy-on-close>

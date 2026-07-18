@@ -138,7 +138,7 @@ function inventoryPercent(checked: number, total: number) {
         <el-col :span="12">
           <div class="section-block">
             <h3 class="section-block__title">待办盘点任务</h3>
-            <el-table :data="pendingTasks" border>
+            <el-table :data="pendingTasks" stripe border>
               <el-table-column prop="taskName" label="任务名称" min-width="160" />
               <el-table-column label="进度" width="140">
                 <template #default="{ row }">
@@ -156,7 +156,7 @@ function inventoryPercent(checked: number, total: number) {
               <h3 class="section-block__title">近期故障记录</h3>
               <el-badge v-if="stats.pendingFaults" :value="stats.pendingFaults" type="danger" />
             </div>
-            <el-table :data="recentFaults" border>
+            <el-table :data="recentFaults" stripe border>
               <el-table-column prop="assetName" label="物资名称" />
               <el-table-column prop="faultLevel" label="等级" width="80" />
               <el-table-column prop="status" label="状态" width="90" />
@@ -168,7 +168,7 @@ function inventoryPercent(checked: number, total: number) {
 
       <div class="section-block">
         <h3 class="section-block__title">近期维修记录</h3>
-        <el-table :data="recentMaintenance" border>
+        <el-table :data="recentMaintenance" stripe border>
           <el-table-column prop="projectName" label="维修项目" min-width="140" />
           <el-table-column prop="assetName" label="关联物资" width="120" />
           <el-table-column prop="fundingSource" label="资金来源" width="130" />

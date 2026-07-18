@@ -187,11 +187,26 @@ export const ledgers: AssetLedger[] = [
 
 export const stockBills: StockBill[] = [
   {
+    id: 'sb-0', billNo: 'RK20250718000', category: 'spare', billType: '入库', scene: '采购',
+    status: '草稿', assetCode: 'SP20250001', assetName: '6205轴承', quantity: 10,
+    applicant: '王仓管', orgId: 'org-team-yw1', orgName: '运维一班',
+    warehouseId: 'ws-1', warehouseName: '沈阳和平备品仓', reason: '草稿示例，可修改后提交',
+    createTime: '2026-07-18 08:00:00',
+  },
+  {
     id: 'sb-1', billNo: 'RK20250715001', category: 'spare', billType: '入库', scene: '采购',
     status: '待审批', assetCode: 'SP20250001', assetName: '6205轴承', quantity: 20,
     applicant: '王仓管', orgId: 'org-team-yw1', orgName: '运维一班',
     warehouseId: 'ws-1', warehouseName: '沈阳和平备品仓', reason: '季度补货',
     createTime: '2026-07-10 09:20:00',
+  },
+  {
+    id: 'sb-1b', billNo: 'RK20250712005', category: 'spare', billType: '入库', scene: '采购',
+    status: '已驳回', assetCode: 'SP20250002', assetName: 'O型密封圈组', quantity: 15,
+    applicant: '王仓管', orgId: 'org-team-yw1', orgName: '运维一班',
+    warehouseId: 'ws-1', warehouseName: '沈阳和平备品仓', reason: '补仓申请',
+    rejectReason: '请核对采购合同后再提交',
+    createTime: '2026-07-12 11:00:00',
   },
   {
     id: 'sb-2', billNo: 'CK20250715002', category: 'tool', billType: '出库', scene: '日常领用',

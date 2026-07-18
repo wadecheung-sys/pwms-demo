@@ -95,6 +95,11 @@
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--pwms-border, var(--el-border-color));
+
+  .el-pagination {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 .stat-grid {

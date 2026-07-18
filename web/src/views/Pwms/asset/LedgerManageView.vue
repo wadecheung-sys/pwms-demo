@@ -5,12 +5,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
 import { useDataScope } from '@/composables/useDataScope'
+import { usePagination } from '@/composables/usePagination'
 import { hasPermission } from '@/utils/pwms/permission'
 import type { AssetCategory, AssetLedger } from '@/types'
 import { specialtyOptions, warehouseAssetNatureOptions } from '@/types'
 import AssetDetailDrawer from '@/components/Pwms/AssetDetailDrawer.vue'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
+import TablePagination from '@/components/Pwms/TablePagination.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,6 +49,7 @@ const rows = computed(() => {
   }
   return list
 })
+const { currentPage, pageSize, total, pageData } = usePagination(rows, 10)
 
 const filterHint = computed(() => {
   if (filterWarehouseId.value) {
@@ -230,7 +233,7 @@ async function doRemove(row: AssetLedger) {
       </template>
     </PageHeader>
 
-    <el-table :data="rows" stripe border>
+    <el-table :data="pageData" stripe border>
         <el-table-column prop="assetCode" label="装备编码" width="120" fixed />
         <el-table-column prop="physicalId" label="实物ID" width="120" />
         <el-table-column prop="assetNo" label="资产编号" width="120" show-overflow-tooltip />
@@ -265,7 +268,9 @@ async function doRemove(row: AssetLedger) {
             </div>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无台账数据" /></template>
       </el-table>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
   <el-dialog v-model="dialogVisible" :title="editingId ? '编辑台账' : '新增台账'" width="720px" destroy-on-close>

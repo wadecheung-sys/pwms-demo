@@ -1,5 +1,8 @@
 import { computed, ref, unref, watch, type ComputedRef, type Ref } from 'vue'
 
+/** 业务列表默认每页条数选项（与 TablePagination 一致） */
+export const PWMS_PAGE_SIZES = [10, 20, 50] as const
+
 export function usePagination<T>(source: Ref<T[]> | ComputedRef<T[]>, defaultPageSize = 10) {
   const currentPage = ref(1)
   const pageSize = ref(defaultPageSize)
@@ -17,7 +20,7 @@ export function usePagination<T>(source: Ref<T[]> | ComputedRef<T[]>, defaultPag
   })
 
   watch(total, (t) => {
-    const maxPage = Math.max(1, Math.ceil(t / pageSize.value))
+    const maxPage = Math.max(1, Math.ceil(t / pageSize.value) || 1)
     if (currentPage.value > maxPage) currentPage.value = maxPage
   })
 
