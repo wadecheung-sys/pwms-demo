@@ -1,0 +1,76 @@
+/**
+ * PWMS theme tokens
+ * Light defaults on :root; dark overrides under html.dark
+ * Namespace: --pwms-*
+ */
+:root {
+  /* Brand */
+  --pwms-primary: #409eff;
+  --pwms-primary-soft: rgba(64, 158, 255, 0.12);
+
+  /* Shell — classic left menu (always dark in classic layout) */
+  --pwms-sidebar-width: 220px;
+  --pwms-sidebar-collapsed: 64px;
+  --pwms-sidebar-bg: #001529;
+  --pwms-sidebar-bg-light: #0f2438;
+  --pwms-sidebar-active: var(--pwms-primary);
+  --pwms-sidebar-text: #bfcbd9;
+  --pwms-sidebar-text-active: #ffffff;
+  --pwms-logo-height: 50px;
+
+  /* Header */
+  --pwms-header-height: 50px;
+  --pwms-header-bg: #ffffff;
+  --pwms-header-text: inherit;
+  --pwms-header-hover: #f6f6f6;
+  --pwms-header-border: #eee;
+
+  /* Content */
+  --pwms-page-bg: #f5f7fa;
+  --pwms-content-bg: #ffffff;
+  --pwms-panel-bg: #ffffff;
+  --pwms-panel-elevated: #fafafa;
+  --pwms-border: #e4e7ed;
+  --pwms-border-soft: #ebeef5;
+  --pwms-radius: 8px;
+  --pwms-content-padding: 16px;
+
+  /* Typography */
+  --pwms-text: #303133;
+  --pwms-text-secondary: #909399;
+  --pwms-text-tertiary: #c0c4cc;
+
+  /* Login */
+  --pwms-login-bg: #f0f2f5;
+  --pwms-login-panel: #ffffff;
+  --pwms-login-accent: #409eff;
+
+  /* Motion */
+  --pwms-transition: 0.2s;
+  --pwms-footer-height: auto;
+}
+
+html.dark {
+  --pwms-primary: #409eff;
+  --pwms-primary-soft: rgba(64, 158, 255, 0.16);
+
+  --pwms-header-bg: #141414;
+  --pwms-header-text: rgba(255, 255, 255, 0.85);
+  --pwms-header-hover: rgba(255, 255, 255, 0.06);
+  --pwms-header-border: #303030;
+
+  --pwms-page-bg: #0a0a0a;
+  --pwms-content-bg: #141414;
+  --pwms-panel-bg: #1d1e1f;
+  --pwms-panel-elevated: #262727;
+  --pwms-border: #303030;
+  --pwms-border-soft: #3a3a3a;
+
+  --pwms-text: rgba(255, 255, 255, 0.85);
+  --pwms-text-secondary: rgba(255, 255, 255, 0.55);
+  --pwms-text-tertiary: rgba(255, 255, 255, 0.35);
+
+  --pwms-login-bg: #0b1220;
+  --pwms-login-panel: #141a24;
+  --pwms-login-accent: #1677ff;
+}

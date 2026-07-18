@@ -2,10 +2,12 @@
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE / editor
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
+.cursor/
 
 # Local env overrides
 .env.local
@@ -16,3 +18,12 @@ reference/
 
 # Local workspace — plans, progress, session notes (not for version control)
 workspace/
+
+# Logs & local smoke artifacts
+*.log
+web/dev-*.log
+web/smoke-report.json
+web/stats.html
+
+# Upstream template CI (use root .github instead)
+web/.github/

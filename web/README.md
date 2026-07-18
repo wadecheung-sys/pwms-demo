@@ -1,19 +1,25 @@
-# 智慧化生产专业仓管理系统
+# 智慧化生产专业仓 — 基于 vue-element-plus-admin
 
-面向电力行业生产专业仓场景的前端管理系统：仓室主数据、备品/仪器/工器具台账、出入库审批、盘点、定额与告警、经营分析一张图。
+本目录由参考工程 `vue-element-plus-admin` 复制而来，并接入专业仓业务模块。
 
 ## 启动
 
 ```bash
-cd web
-npm install
+npm install --legacy-peer-deps
 npm run dev
 ```
 
-浏览器访问 http://localhost:5173
+账号：`admin` / `123456`
 
-## 技术栈
+## 目录说明
 
-- Vue 3 + TypeScript + Vite 8
-- Element Plus、Pinia、Vue Router
-- ECharts、Leaflet
+| 路径 | 说明 |
+|------|------|
+| `src/views/Pwms/` | 专业仓业务页面 |
+| `src/stores/` | 业务 Pinia（data / user） |
+| `src/router/pwms.ts` | 业务菜单路由 |
+| `src/styles/pwms/` | 业务页面板样式 + tokens |
+| `src/components/Pwms/` | 业务共用组件 |
+| `src/layout/` | 参考项目布局壳（classic 深色） |
+
+历史业务工程见仓库 `archive/pwms-web-v3/`。

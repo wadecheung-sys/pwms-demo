@@ -1,0 +1,58 @@
+/* Design tokens + Element Plus dark */
+@use '../tokens.css';
+@use 'element-plus/theme-chalk/dark/css-vars.css';
+
+html.dark {
+  color-scheme: dark;
+
+  /* Align EP primary with shell brand */
+  --el-color-primary: var(--pwms-primary);
+  --el-bg-color: var(--pwms-content-bg);
+  --el-bg-color-overlay: var(--pwms-panel-elevated);
+  --el-bg-color-page: var(--pwms-page-bg);
+  --el-text-color-primary: var(--pwms-text);
+  --el-text-color-regular: var(--pwms-text);
+  --el-text-color-secondary: var(--pwms-text-secondary);
+  --el-text-color-placeholder: var(--pwms-text-tertiary);
+  --el-border-color: var(--pwms-border);
+  --el-border-color-light: var(--pwms-border-soft);
+  --el-fill-color-blank: var(--pwms-panel-bg);
+  --el-fill-color-light: var(--pwms-panel-elevated);
+  --el-mask-color: rgba(0, 0, 0, 0.6);
+
+  --el-table-header-bg-color: var(--pwms-panel-elevated);
+  --el-table-bg-color: var(--pwms-panel-bg);
+  --el-table-tr-bg-color: var(--pwms-panel-bg);
+  --el-table-row-hover-bg-color: rgba(64, 158, 255, 0.08);
+  --el-table-border-color: var(--pwms-border);
+}
+
+/* Shared page surfaces under dark shell */
+html.dark {
+  .page-panel {
+    background: var(--pwms-panel-bg);
+    border: 1px solid var(--pwms-border);
+    box-shadow: none;
+  }
+
+  .stat-item {
+    background: var(--pwms-panel-elevated);
+    border-color: var(--pwms-border);
+  }
+
+  .search-form,
+  .table-pagination,
+  .section-block {
+    border-color: var(--pwms-border);
+  }
+
+  .el-card {
+    --el-card-bg-color: var(--pwms-panel-bg);
+    border-color: var(--pwms-border);
+  }
+
+  .el-dialog,
+  .el-drawer {
+    --el-dialog-bg-color: var(--pwms-panel-bg);
+  }
+}

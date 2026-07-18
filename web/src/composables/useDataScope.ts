@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+﻿import { computed } from 'vue'
 import type { AssetCategory, AssetLedger, Person, WarehouseSite } from '@/types'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
@@ -8,8 +8,8 @@ import {
   filterWarehouses,
   getVisibleOrgIds,
   visibleAssetCodeSet,
-} from '@/utils/dataScope'
-import { hasPermission } from '@/utils/permission'
+} from '@/utils/pwms/dataScope'
+import { hasPermission } from '@/utils/pwms/permission'
 
 export function useDataScope() {
   const dataStore = useDataStore()

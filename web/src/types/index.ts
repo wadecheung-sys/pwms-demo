@@ -258,7 +258,7 @@ export interface AssetLifecycleEvent {
   time: string
   description: string
   tag?: string
-  tagType?: '' | 'success' | 'warning' | 'danger' | 'info'
+  tagType?: 'primary' | 'success' | 'warning' | 'danger' | 'info'
 }
 
 export type InventoryPlanLevel = 'province' | 'city' | 'county' | 'team' | 'center' | 'warehouse'

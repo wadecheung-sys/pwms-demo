@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import * as seed from '@/mock/data'
 import type {
@@ -25,7 +25,7 @@ import type {
   StockBill,
   WarehouseSite,
 } from '@/types'
-import { genAssetCode, genId, nowStr } from '@/utils/id'
+import { genAssetCode, genId, nowStr } from '@/utils/pwms/id'
 import {
   buildOrgTree,
   getOrgChildren,
@@ -33,9 +33,9 @@ import {
   isInventoryCenterOrg,
   levelFromType,
   validateOrgHierarchy,
-} from '@/utils/org'
-import { clearBusinessData, loadJson, saveJson } from '@/utils/persist'
-import { calcQuotaLimits, calcStandardQty } from '@/utils/quota'
+} from '@/utils/pwms/org'
+import { clearBusinessData, loadJson, saveJson } from '@/utils/pwms/persist'
+import { calcQuotaLimits, calcStandardQty } from '@/utils/pwms/quota'
 
 /** 业务数据结构版本；v5 盘点过账/报废/单据重提 */
 export const BUSINESS_SCHEMA_VERSION = 5

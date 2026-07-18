@@ -1,9 +1,9 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { systemAccounts } from '@/mock/auth'
 import { useDataStore } from '@/stores/data'
 import type { DataScope, OrgType, UserContext } from '@/types'
-import { orgTypeLabels } from '@/utils/org'
+import { orgTypeLabels } from '@/utils/pwms/org'
 
 const STORAGE_KEY = 'pwms_user_context'
 
@@ -87,7 +87,7 @@ function refreshFromMasterData(ctx: UserContext): UserContext {
   }
 }
 
-export const useUserStore = defineStore('user', () => {
+export const useUserStore = defineStore('pwms-user', () => {
   const context = ref<UserContext>(loadContext() ?? emptyContext())
 
   const token = computed(() => context.value.token || null)
@@ -123,6 +123,22 @@ export const useUserStore = defineStore('user', () => {
     saveContext(next)
   }
 
+  /**
+   * 与壳层登录态对齐。
+   * Cursor/Edge 等不同浏览器各自有 localStorage：壳层 user 已恢复但业务会话缺失时，
+   * 页面会按空 orgId + org_only 过滤，表现为「看不到模拟数据」。
+   */
+  function ensureAlignedWithShell(shellUsername?: string) {
+    if (!shellUsername) return false
+    if (context.value.token && context.value.username === shellUsername) {
+      syncSession()
+      return true
+    }
+    const account = systemAccounts.find((a) => a.username === shellUsername)
+    if (!account) return false
+    return login(account.username, account.password)
+  }
+
   return {
     context,
     token,
@@ -133,5 +149,6 @@ export const useUserStore = defineStore('user', () => {
     logout,
     isLoggedIn,
     syncSession,
+    ensureAlignedWithShell,
   }
 })

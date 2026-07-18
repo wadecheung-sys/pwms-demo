@@ -26,10 +26,10 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build for GitHub Pages
-        run: npm run build:pages
+        run: npm run build:pro
         env:
           VITE_BASE_PATH: /production-warehouse-management/
 
