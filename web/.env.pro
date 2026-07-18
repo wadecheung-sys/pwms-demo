@@ -25,8 +25,8 @@ VITE_APP_TITLE=智慧化生产专业仓管理系统
 # 是否包分析
 VITE_USE_BUNDLE_ANALYZER=false
 
-# 是否全量引入element-plus样式
-VITE_USE_ALL_ELEMENT_PLUS_STYLE=false
+# 是否全量引入element-plus样式（生产务必为 true：按需样式在 EP 新版本下易漏 dialog/overlay，导致页面被空白遮罩盖住）
+VITE_USE_ALL_ELEMENT_PLUS_STYLE=true
 
 # 是否开启mock
 VITE_USE_MOCK=true

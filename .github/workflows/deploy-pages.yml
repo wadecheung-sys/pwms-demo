@@ -32,6 +32,7 @@ jobs:
         run: npm run build:pro
         env:
           VITE_BASE_PATH: /production-warehouse-management/
+          VITE_USE_ALL_ELEMENT_PLUS_STYLE: "true"
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
