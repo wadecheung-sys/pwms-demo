@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
 import { useDataScope } from '@/composables/useDataScope'
 import { hasPermission } from '@/utils/permission'
 import { isInventoryCenterOrg } from '@/utils/org'
 import type { AssetCategory, InventoryPageAction } from '@/types'
+
+const categoryOptions: { value: AssetCategory | 'all'; label: string }[] = [
+  { value: 'spare', label: '备品备件' },
+  { value: 'instrument', label: '仪器仪表' },
+  { value: 'tool', label: '工器具' },
+  { value: 'all', label: '全品类' },
+]
 
 const route = useRoute()
 const router = useRouter()
@@ -39,6 +46,7 @@ const dispatchForm = reactive({
   taskName: '',
   centerOrgId: '',
   deadline: '',
+  category: 'spare' as AssetCategory | 'all',
 })
 
 const centerOrgs = computed(() =>
@@ -49,20 +57,30 @@ function openDispatch() {
   dispatchForm.taskName = `${new Date().getFullYear()}年盘点计划`
   dispatchForm.centerOrgId = centerOrgs.value.find((o) => o.id === userStore.context.orgId)?.id || centerOrgs.value[0]?.id || ''
   dispatchForm.deadline = ''
+  dispatchForm.category = category.value || 'spare'
   dispatchVisible.value = true
 }
 
 function doDispatch() {
   try {
-    if (!category.value) throw new Error('请从具体物资类别进入下达')
-    dataStore.dispatchInventoryTask({
-      category: category.value,
-      taskName: dispatchForm.taskName,
-      centerOrgId: dispatchForm.centerOrgId,
-      assignee: userStore.displayName,
-      deadline: dispatchForm.deadline || '2026-12-31',
-    })
-    ElMessage.success('已按省市县层级下达盘点计划')
+    const cats: AssetCategory[] =
+      category.value
+        ? [category.value]
+        : dispatchForm.category === 'all'
+          ? ['spare', 'instrument', 'tool']
+          : [dispatchForm.category]
+    if (!cats.length) throw new Error('请选择物资类别')
+    for (const cat of cats) {
+      const label = categoryOptions.find((c) => c.value === cat)?.label || cat
+      dataStore.dispatchInventoryTask({
+        category: cat,
+        taskName: cats.length > 1 ? `${dispatchForm.taskName}（${label}）` : dispatchForm.taskName,
+        centerOrgId: dispatchForm.centerOrgId,
+        assignee: userStore.displayName,
+        deadline: dispatchForm.deadline || '2026-12-31',
+      })
+    }
+    ElMessage.success(cats.length > 1 ? `已下达 ${cats.length} 类物资盘点计划` : '已按省市县层级下达盘点计划')
     dispatchVisible.value = false
   } catch (e) {
     ElMessage.error((e as Error).message)
@@ -95,12 +113,16 @@ function submitScan() {
   if (scanCode.value && scanCode.value !== expect && scanCode.value !== line.assetCode) {
     ElMessage.warning('扫码与账面实物不一致，仍可按实盘数登记差异')
   }
-  dataStore.updateInventoryLine(currentLineId.value, actualQty.value, {
-    checkMethod: 'scan',
-    scanCode: scanCode.value || expect,
-  })
-  ElMessage.success('扫码盘点已登记')
-  scanVisible.value = false
+  try {
+    dataStore.updateInventoryLine(currentLineId.value, actualQty.value, {
+      checkMethod: 'scan',
+      scanCode: scanCode.value || expect,
+    })
+    ElMessage.success('扫码盘点已登记')
+    scanVisible.value = false
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
 }
 
 function openPhoto(lineId: string, book: number) {
@@ -125,13 +147,48 @@ function submitPhoto() {
     ElMessage.warning('请先拍照/选择图片')
     return
   }
-  dataStore.updateInventoryLine(currentLineId.value, actualQty.value, {
-    checkMethod: 'photo',
-    photoDataUrl: photoPreview.value,
-  })
-  ElMessage.success('拍照盘点已登记')
-  photoVisible.value = false
+  try {
+    dataStore.updateInventoryLine(currentLineId.value, actualQty.value, {
+      checkMethod: 'photo',
+      photoDataUrl: photoPreview.value,
+    })
+    ElMessage.success('拍照盘点已登记')
+    photoVisible.value = false
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
 }
+
+function doPostLine(lineId: string) {
+  try {
+    dataStore.postInventoryAdjustment(lineId, userStore.displayName)
+    ElMessage.success('差异已过账，台账数量已更新')
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+}
+
+async function doPostTask() {
+  if (!activeTaskId.value) return
+  try {
+    await ElMessageBox.confirm(
+      '将对当前任务下全部「有差异」且未过账的明细调整台账数量并生成出入库流水，是否继续？',
+      '批量过账确认',
+      { type: 'warning' },
+    )
+    const n = dataStore.postInventoryTaskAdjustments(activeTaskId.value, userStore.displayName)
+    ElMessage.success(`已过账 ${n} 条差异明细`)
+  } catch (e) {
+    if ((e as string) !== 'cancel') ElMessage.error((e as Error).message || '已取消')
+  }
+}
+
+const pendingAdjustCount = computed(
+  () =>
+    dataStore.inventoryLineItems.filter(
+      (l) => l.taskId === activeTaskId.value && l.status === '有差异' && !l.adjusted,
+    ).length,
+)
 
 function progressPct(row: { totalCount: number; checkedCount: number }) {
   if (!row.totalCount) return 0
@@ -175,7 +232,8 @@ function isOverdue(row: { status: string; deadline: string }) {
 
 const pageDesc = computed(() => {
   if (action.value === 'plan') return '由省公司或地市公司下达盘点计划，系统按组织树逐级分解至县公司/班组。'
-  if (action.value === 'execute') return '选择本单位执行任务，通过实物ID扫码或现场拍照登记实盘数量。'
+  if (action.value === 'execute')
+    return '选择本单位执行任务，通过实物ID扫码或现场拍照登记实盘；有差异明细可过账回写台账并生成流水。'
   return '汇总各单位盘点完成率、逾期情况与层级进度，支撑督办管控。'
 })
 </script>
@@ -191,12 +249,19 @@ const pageDesc = computed(() => {
           <p class="page-desc">{{ pageDesc }}</p>
         </div>
         <div class="panel-actions__right">
-          <el-button v-if="action === 'plan' && canDispatch && category" type="primary" @click="openDispatch">
+          <el-button v-if="action === 'plan' && canDispatch" type="primary" @click="openDispatch">
             下达计划
           </el-button>
           <el-button
+            v-if="action === 'execute' && canExecute && activeTaskId && pendingAdjustCount > 0"
+            type="warning"
+            @click="doPostTask"
+          >
+            批量过账（{{ pendingAdjustCount }}）
+          </el-button>
+          <el-button
             v-if="action === 'progress'"
-            @click="router.push(`/${category || 'spare'}/inventory/execute`)"
+            @click="router.push(aggregate ? '/warehouse/inventory/execute' : `/${category || 'spare'}/inventory/execute`)"
           >
             去执行盘点
           </el-button>
@@ -292,12 +357,38 @@ const pageDesc = computed(() => {
               <el-table-column prop="assetName" label="名称" min-width="100" />
               <el-table-column prop="bookQuantity" label="账面" width="70" />
               <el-table-column prop="actualQuantity" label="实盘" width="70" />
-              <el-table-column prop="status" label="结果" width="80" />
-              <el-table-column prop="checkMethod" label="方式" width="80" />
-              <el-table-column v-if="canExecute" label="操作" width="180">
+              <el-table-column prop="status" label="结果" width="80">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openScan(row.id, row.bookQuantity)">扫码</el-button>
-                  <el-button link type="primary" @click="openPhoto(row.id, row.bookQuantity)">拍照</el-button>
+                  <el-tag
+                    size="small"
+                    :type="row.status === '有差异' ? 'danger' : row.status === '已盘' ? 'success' : 'info'"
+                  >
+                    {{ row.status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="过账" width="90">
+                <template #default="{ row }">
+                  <el-tag v-if="row.adjusted" size="small" type="success">已过账</el-tag>
+                  <span v-else-if="row.status === '有差异'" class="muted">待过账</span>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="checkMethod" label="方式" width="80" />
+              <el-table-column v-if="canExecute" label="操作" width="200">
+                <template #default="{ row }">
+                  <template v-if="!row.adjusted">
+                    <el-button link type="primary" @click="openScan(row.id, row.bookQuantity)">扫码</el-button>
+                    <el-button link type="primary" @click="openPhoto(row.id, row.bookQuantity)">拍照</el-button>
+                  </template>
+                  <el-button
+                    v-if="row.status === '有差异' && !row.adjusted"
+                    link
+                    type="warning"
+                    @click="doPostLine(row.id)"
+                  >
+                    过账
+                  </el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -309,6 +400,11 @@ const pageDesc = computed(() => {
     <el-dialog v-model="dispatchVisible" title="下达盘点计划" width="480px">
       <el-form label-width="100px">
         <el-form-item label="计划名称"><el-input v-model="dispatchForm.taskName" /></el-form-item>
+        <el-form-item v-if="aggregate || !category" label="物资类别">
+          <el-select v-model="dispatchForm.category" style="width: 100%">
+            <el-option v-for="c in categoryOptions" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="下达组织">
           <el-select v-model="dispatchForm.centerOrgId" style="width: 100%">
             <el-option v-for="o in centerOrgs" :key="o.id" :label="o.name" :value="o.id" />
@@ -357,6 +453,7 @@ const pageDesc = computed(() => {
 .page-title { margin: 0; font-size: 18px; font-weight: 600; }
 .page-desc { margin: 4px 0 0; color: #8c8c8c; font-size: 13px; }
 .prog-text { margin-left: 8px; font-size: 12px; color: #8c8c8c; }
+.muted { color: #8c8c8c; font-size: 12px; }
 .photo-preview { display: block; margin-top: 8px; max-width: 100%; max-height: 200px; border-radius: 6px; }
 
 .progress-kpis {

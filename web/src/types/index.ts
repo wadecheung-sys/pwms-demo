@@ -184,9 +184,9 @@ export interface InOutRecord {
 
 export type StockBillType = '入库' | '出库'
 
-export type InboundScene = '采购' | '归还' | '调拨' | '检修回收' | '物资库转入'
+export type InboundScene = '采购' | '归还' | '调拨' | '检修回收' | '物资库转入' | '盘盈'
 
-export type OutboundScene = '日常领用' | '抢修领用' | '调拨' | '送检'
+export type OutboundScene = '日常领用' | '抢修领用' | '调拨' | '送检' | '盘亏' | '报废'
 
 export type StockBillStatus = '草稿' | '待审批' | '已通过' | '已驳回' | '待确认' | '已确认'
 
@@ -217,8 +217,8 @@ export interface StockBill {
   rejectReason?: string
 }
 
-export const inboundSceneOptions: InboundScene[] = ['采购', '归还', '调拨', '检修回收', '物资库转入']
-export const outboundSceneOptions: OutboundScene[] = ['日常领用', '抢修领用', '调拨', '送检']
+export const inboundSceneOptions: InboundScene[] = ['采购', '归还', '调拨', '检修回收', '物资库转入', '盘盈']
+export const outboundSceneOptions: OutboundScene[] = ['日常领用', '抢修领用', '调拨', '送检', '盘亏', '报废']
 
 export interface FaultRecord {
   id: string
@@ -295,6 +295,10 @@ export interface InventoryLineItem {
   scanCode?: string
   photoDataUrl?: string
   physicalId?: string
+  /** 差异是否已过账至台账 */
+  adjusted?: boolean
+  adjustedAt?: string
+  adjustedBy?: string
 }
 
 /** 定额公式类型 */

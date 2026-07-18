@@ -27,7 +27,7 @@ const highlights = [
   {
     icon: 'Refresh',
     title: '业务全程留痕',
-    desc: '台账、出入库、故障维修、盘点稽核形成完整业务闭环',
+    desc: '台账建档、出入库审批确认、故障维修、盘点过账与报废归档形成完整闭环',
   },
   {
     icon: 'Monitor',

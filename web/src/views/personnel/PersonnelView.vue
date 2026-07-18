@@ -7,11 +7,13 @@ import type { FilterField } from '@/components/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
 import { useDataScope } from '@/composables/useDataScope'
 import { useDataStore } from '@/stores/data'
+import { useUserStore } from '@/stores/user'
 import { matchExact, matchKeyword } from '@/utils/filter'
 import { formatOrgOptionLabel } from '@/utils/org'
 import type { Person } from '@/types'
 
 const dataStore = useDataStore()
+const userStore = useUserStore()
 const { scopePersons, visibleOrganizations, can } = useDataScope()
 const canManagePersonnel = computed(() => can('system:user'))
 const dialogVisible = ref(false)
@@ -104,6 +106,7 @@ async function handleSave() {
       dataStore.addPerson({ ...form })
       ElMessage.success('人员已新增')
     }
+    userStore.syncSession()
     dialogVisible.value = false
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '保存失败')
@@ -113,6 +116,7 @@ async function handleSave() {
 async function handleDelete(row: Person) {
   await ElMessageBox.confirm(`确定删除人员「${row.name}」吗？`, '提示', { type: 'warning' })
   dataStore.removePerson(row.id)
+  userStore.syncSession()
   ElMessage.success('已删除')
 }
 </script>

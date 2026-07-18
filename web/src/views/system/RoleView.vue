@@ -5,10 +5,12 @@ import FilterBar from '@/components/FilterBar.vue'
 import type { FilterField } from '@/components/FilterBar.vue'
 import { useTableFilter } from '@/composables/useTableFilter'
 import { useDataStore } from '@/stores/data'
+import { useUserStore } from '@/stores/user'
 import { matchKeyword } from '@/utils/filter'
 import type { Role } from '@/types'
 
 const dataStore = useDataStore()
+const userStore = useUserStore()
 const dialogVisible = ref(false)
 const permVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -68,6 +70,7 @@ async function handleSave() {
     dataStore.addRole({ ...form, permissions: [] })
     ElMessage.success('角色已新增')
   }
+  userStore.syncSession()
   dialogVisible.value = false
 }
 
@@ -75,6 +78,7 @@ function handlePermSave() {
   if (!selectedRole.value) return
   const perms = selectedPerms.value.includes('*') ? ['*'] : selectedPerms.value
   dataStore.updateRole(selectedRole.value.id, { permissions: perms })
+  userStore.syncSession()
   ElMessage.success('权限已保存')
   permVisible.value = false
 }
@@ -83,6 +87,7 @@ async function handleDelete(row: Role) {
   await ElMessageBox.confirm(`确定删除角色「${row.name}」吗？`, '提示', { type: 'warning' })
   try {
     dataStore.removeRole(row.id)
+    userStore.syncSession()
     ElMessage.success('已删除')
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '删除失败')

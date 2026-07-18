@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataStore } from '@/stores/data'
 import { useUserStore } from '@/stores/user'
 import { useDataScope } from '@/composables/useDataScope'
@@ -186,6 +186,32 @@ function save() {
     ElMessage.error((e as Error).message)
   }
 }
+
+async function doDispose(row: AssetLedger) {
+  try {
+    await ElMessageBox.confirm(
+      `确认对「${row.name}」办理报废？将扣减剩余库存 ${row.quantity} 并归档处置状态。`,
+      '报废确认',
+      { type: 'warning', confirmButtonText: '确认报废' },
+    )
+    dataStore.disposeLedger(row.id, userStore.displayName)
+    ElMessage.success('报废已完成，库存已清零')
+  } catch (e) {
+    if ((e as string) !== 'cancel') ElMessage.error((e as Error).message || '已取消')
+  }
+}
+
+async function doRemove(row: AssetLedger) {
+  try {
+    await ElMessageBox.confirm(`确认删除台账「${row.name}」？删除后不可恢复。`, '删除确认', {
+      type: 'warning',
+    })
+    dataStore.removeLedger(row.id)
+    ElMessage.success('已删除')
+  } catch (e) {
+    if ((e as string) !== 'cancel') ElMessage.error((e as Error).message || '已取消')
+  }
+}
 </script>
 
 <template>
@@ -222,10 +248,19 @@ function save() {
         <el-table-column prop="disposeStatus" label="处置" width="80" />
         <el-table-column prop="keeperName" label="保管人" width="90" />
         <el-table-column v-if="category === 'instrument'" prop="checkDueStatus" label="校验" width="80" />
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="detailCode = row.assetCode">详情</el-button>
             <el-button v-if="canEdit" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button
+              v-if="canEdit && row.status !== '报废' && row.disposeStatus !== '已报废'"
+              link
+              type="warning"
+              @click="doDispose(row)"
+            >
+              报废
+            </el-button>
+            <el-button v-if="canEdit" link type="danger" @click="doRemove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

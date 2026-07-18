@@ -113,21 +113,26 @@ function warehouseRoutes() {
       {
         path: 'inout',
         component: () => import('@/layouts/RouteView.vue'),
-        meta: { title: '出入库管理' },
-        redirect: '/warehouse/inout/log',
-        children: [
-          leaf('log', 'warehouse-inout-log', '出入库记录', () => import('@/views/inout/StockBillView.vue'), {
+        meta: { title: '出入库管理', icon: 'Sort' },
+        redirect: '/warehouse/inout/in-apply',
+        children: (
+          [
+            { path: 'in-apply', title: '入库申请单', action: 'in-apply' as const },
+            { path: 'in-approve', title: '入库审批', action: 'in-approve' as const },
+            { path: 'in-confirm', title: '入库确认', action: 'in-confirm' as const },
+            { path: 'out-apply', title: '出库申请单', action: 'out-apply' as const },
+            { path: 'out-approve', title: '出库审批', action: 'out-approve' as const },
+            { path: 'out-confirm', title: '出库确认', action: 'out-confirm' as const },
+            { path: 'stock-status', title: '在库状态', action: 'stock-status' as const },
+            { path: 'shortage', title: '缺额视图', action: 'shortage' as const },
+            { path: 'log', title: '出入库记录', action: 'inout-log' as const },
+          ] as const
+        ).map((p) =>
+          leaf(p.path, `warehouse-inout-${p.path}`, p.title, () => import('@/views/inout/StockBillView.vue'), {
             aggregateAssets: true,
-            inoutAction: 'inout-log',
+            inoutAction: p.action,
           }),
-          leaf(
-            'stock-status',
-            'warehouse-stock-status',
-            '在库状态',
-            () => import('@/views/inout/StockBillView.vue'),
-            { aggregateAssets: true, inoutAction: 'stock-status' },
-          ),
-        ],
+        ),
       },
       leaf('fault', 'warehouse-fault', '故障记录', () => import('@/views/asset/AssetModuleView.vue'), {
         aggregateAssets: true,
@@ -143,17 +148,23 @@ function warehouseRoutes() {
       {
         path: 'inventory',
         component: () => import('@/layouts/RouteView.vue'),
-        meta: { title: '盘点管理' },
-        redirect: '/warehouse/inventory/progress',
-        children: [
+        meta: { title: '盘点管理', icon: 'DocumentChecked' },
+        redirect: '/warehouse/inventory/plan',
+        children: (
+          [
+            { path: 'plan', title: '计划下达', action: 'plan' as const },
+            { path: 'execute', title: '执行盘点', action: 'execute' as const },
+            { path: 'progress', title: '进度管控', action: 'progress' as const },
+          ] as const
+        ).map((p) =>
           leaf(
-            'progress',
-            'warehouse-inv-progress',
-            '进度管控',
+            p.path,
+            `warehouse-inv-${p.path}`,
+            p.title,
             () => import('@/views/inventory/InventoryManageView.vue'),
-            { aggregateAssets: true, inventoryAction: 'progress' },
+            { aggregateAssets: true, inventoryAction: p.action },
           ),
-        ],
+        ),
       },
     ],
   }

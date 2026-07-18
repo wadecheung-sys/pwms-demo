@@ -25,7 +25,7 @@ const canConfirm = computed(() => hasPermission(userStore.context, 'inout:confir
 const scopedLedgers = computed(() => {
   let list = dataStore.ledgers
   if (!aggregate.value && category.value) list = list.filter((l) => l.category === category.value)
-  return scopeByOrg(list)
+  return scopeByOrg(list).filter((l) => l.status !== '报废' && l.disposeStatus !== '已报废')
 })
 
 const bills = computed(() => {
@@ -60,6 +60,7 @@ const titleMap: Record<InOutPageAction, string> = {
 }
 
 const dialogVisible = ref(false)
+const editingId = ref<string | null>(null)
 const confirmVisible = ref(false)
 const confirmPhysicalId = ref('')
 const currentBill = ref<StockBill | null>(null)
@@ -73,8 +74,10 @@ const form = reactive({
 })
 
 const isInbound = computed(() => action.value.startsWith('in-'))
+const isApplyPage = computed(() => action.value === 'in-apply' || action.value === 'out-apply')
 
 function openCreate() {
+  editingId.value = null
   form.assetCode = scopedLedgers.value[0]?.assetCode ?? ''
   form.quantity = 1
   form.scene = isInbound.value ? '采购' : '日常领用'
@@ -83,29 +86,70 @@ function openCreate() {
   dialogVisible.value = true
 }
 
+function openEdit(row: StockBill) {
+  editingId.value = row.id
+  form.assetCode = row.assetCode
+  form.quantity = row.quantity
+  form.scene = row.scene
+  form.reason = row.reason
+  form.workOrderNo = row.workOrderNo || ''
+  dialogVisible.value = true
+}
+
 function submitCreate() {
   try {
     const ledger = dataStore.getLedgerByCode(form.assetCode)
     if (!ledger) throw new Error('请选择物资')
-    dataStore.createStockBill({
-      category: ledger.category,
-      billType: isInbound.value ? '入库' : '出库',
-      scene: form.scene,
-      assetCode: form.assetCode,
-      quantity: form.quantity,
-      applicant: userStore.displayName,
-      orgId: ledger.orgId,
-      orgName: ledger.orgName,
-      warehouseId: ledger.warehouseId,
-      warehouseName: ledger.warehouseName,
-      reason: form.reason || form.scene,
-      workOrderNo: form.workOrderNo || undefined,
-      status: '待审批',
-    })
-    ElMessage.success('已提交申请，等待审批')
+    if (editingId.value) {
+      dataStore.updateStockBill(editingId.value, {
+        assetCode: form.assetCode,
+        quantity: form.quantity,
+        scene: form.scene,
+        reason: form.reason || form.scene,
+        workOrderNo: form.workOrderNo || undefined,
+      })
+      dataStore.resubmitStockBill(editingId.value)
+      ElMessage.success('已修改并重新提交审批')
+    } else {
+      dataStore.createStockBill({
+        category: ledger.category,
+        billType: isInbound.value ? '入库' : '出库',
+        scene: form.scene,
+        assetCode: form.assetCode,
+        quantity: form.quantity,
+        applicant: userStore.displayName,
+        orgId: ledger.orgId,
+        orgName: ledger.orgName,
+        warehouseId: ledger.warehouseId,
+        warehouseName: ledger.warehouseName,
+        reason: form.reason || form.scene,
+        workOrderNo: form.workOrderNo || undefined,
+        status: '待审批',
+      })
+      ElMessage.success('已提交申请，等待审批')
+    }
     dialogVisible.value = false
   } catch (e) {
     ElMessage.error((e as Error).message)
+  }
+}
+
+async function doResubmit(row: StockBill) {
+  try {
+    dataStore.resubmitStockBill(row.id)
+    ElMessage.success('已重新提交审批')
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+}
+
+async function doRemove(row: StockBill) {
+  try {
+    await ElMessageBox.confirm(`确认删除单据 ${row.billNo}？`, '删除确认', { type: 'warning' })
+    dataStore.removeStockBill(row.id)
+    ElMessage.success('已删除')
+  } catch (e) {
+    if ((e as string) !== 'cancel') ElMessage.error((e as Error).message || '已取消')
   }
 }
 
@@ -145,6 +189,40 @@ function doConfirm() {
   }
 }
 
+function createReplenish(row: { category: AssetCategory; typeName: string; shortage: number; orgId?: string; warehouseId?: string }) {
+  const ledger = dataStore.ledgers.find(
+    (l) =>
+      l.category === row.category &&
+      l.typeName === row.typeName &&
+      (!row.warehouseId || l.warehouseId === row.warehouseId) &&
+      (!row.orgId || l.orgId === row.orgId) &&
+      l.status !== '报废',
+  )
+  if (!ledger) {
+    ElMessage.warning('未找到对应品类台账，请先维护台账后再发起补仓')
+    return
+  }
+  try {
+    dataStore.createStockBill({
+      category: ledger.category,
+      billType: '入库',
+      scene: '采购',
+      assetCode: ledger.assetCode,
+      quantity: Math.max(1, row.shortage),
+      applicant: userStore.displayName,
+      orgId: ledger.orgId,
+      orgName: ledger.orgName,
+      warehouseId: ledger.warehouseId,
+      warehouseName: ledger.warehouseName,
+      reason: `定额缺额补仓（${row.typeName}，缺额 ${row.shortage}）`,
+      status: '待审批',
+    })
+    ElMessage.success('已生成入库申请，请前往入库审批处理')
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+}
+
 const shortageRows = computed(() =>
   dataStore.quotaResults.filter((q) => {
     if (q.shortage <= 0) return false
@@ -159,6 +237,11 @@ const statusTag = (s: string) => {
   if (s === '已驳回') return 'danger'
   return 'info'
 }
+
+const dialogTitle = computed(() => {
+  if (editingId.value) return isInbound.value ? '修改入库申请' : '修改出库申请'
+  return isInbound.value ? '新建入库申请' : '新建出库申请'
+})
 </script>
 
 <template>
@@ -171,7 +254,7 @@ const statusTag = (s: string) => {
         </div>
         <div class="panel-actions__right">
           <el-button
-            v-if="(action === 'in-apply' || action === 'out-apply') && canApply"
+            v-if="isApplyPage && canApply"
             type="primary"
             @click="openCreate"
           >
@@ -211,6 +294,11 @@ const statusTag = (s: string) => {
               <el-tag type="danger">{{ row.shortage }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column v-if="canApply" label="操作" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="createReplenish(row)">发起补仓</el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </template>
 
@@ -244,9 +332,15 @@ const statusTag = (s: string) => {
               <el-tag :type="statusTag(row.status)" size="small">{{ row.status }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="rejectReason" label="驳回原因" min-width="120" show-overflow-tooltip />
           <el-table-column prop="createTime" label="创建时间" width="170" />
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" width="240" fixed="right">
             <template #default="{ row }">
+              <template v-if="isApplyPage && canApply && (row.status === '草稿' || row.status === '已驳回')">
+                <el-button link type="primary" @click="openEdit(row)">修改重提</el-button>
+                <el-button link type="primary" @click="doResubmit(row)">直接重提</el-button>
+                <el-button link type="danger" @click="doRemove(row)">删除</el-button>
+              </template>
               <template v-if="action.includes('approve') && canApprove">
                 <el-button link type="primary" @click="doApprove(row)">通过</el-button>
                 <el-button link type="danger" @click="doReject(row)">驳回</el-button>
@@ -259,14 +353,13 @@ const statusTag = (s: string) => {
               >
                 扫码确认
               </el-button>
-              <span v-if="row.rejectReason" class="muted">{{ row.rejectReason }}</span>
             </template>
           </el-table-column>
         </el-table>
       </template>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isInbound ? '新建入库申请' : '新建出库申请'" width="520px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
       <el-form label-width="100px">
         <el-form-item label="物资">
           <el-select v-model="form.assetCode" filterable style="width: 100%">
@@ -281,7 +374,7 @@ const statusTag = (s: string) => {
         <el-form-item label="场景">
           <el-select v-model="form.scene" style="width: 100%">
             <el-option
-              v-for="s in isInbound ? inboundSceneOptions : outboundSceneOptions"
+              v-for="s in isInbound ? inboundSceneOptions.filter((x) => x !== '盘盈') : outboundSceneOptions.filter((x) => !['盘亏', '报废'].includes(x))"
               :key="s"
               :label="s"
               :value="s"
@@ -300,7 +393,7 @@ const statusTag = (s: string) => {
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitCreate">提交审批</el-button>
+        <el-button type="primary" @click="submitCreate">{{ editingId ? '保存并重提' : '提交审批' }}</el-button>
       </template>
     </el-dialog>
 
@@ -325,10 +418,6 @@ const statusTag = (s: string) => {
   margin: 4px 0 0;
   color: #8c8c8c;
   font-size: 13px;
-}
-.muted {
-  color: #8c8c8c;
-  font-size: 12px;
 }
 .hint {
   margin: 0 0 12px;

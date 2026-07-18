@@ -37,8 +37,8 @@ import {
 import { clearBusinessData, loadJson, saveJson } from '@/utils/persist'
 import { calcQuotaLimits, calcStandardQty } from '@/utils/quota'
 
-/** 业务数据结构版本；v3 出入库审批/定额/告警 */
-export const BUSINESS_SCHEMA_VERSION = 4
+/** 业务数据结构版本；v5 盘点过账/报废/单据重提 */
+export const BUSINESS_SCHEMA_VERSION = 5
 
 interface BusinessData {
   schemaVersion: number
@@ -435,7 +435,43 @@ export const useDataStore = defineStore('data', () => {
   }
 
   function removeLedger(id: string) {
+    const ledger = data.value.ledgers.find((l) => l.id === id)
+    if (!ledger) return
+    const pending = data.value.stockBills.some(
+      (b) => b.assetCode === ledger.assetCode && !['已确认', '已驳回'].includes(b.status),
+    )
+    if (pending) throw new Error('该物资存在未完结出入库单据，无法删除')
+    if (ledger.quantity > 0) throw new Error('库存数量大于零，请先出库或办理报废后再删除')
     data.value.ledgers = data.value.ledgers.filter((l) => l.id !== id)
+  }
+
+  /** 资产报废：扣减剩余库存并归档处置状态 */
+  function disposeLedger(id: string, operator: string, reason = '资产报废') {
+    const ledger = data.value.ledgers.find((l) => l.id === id)
+    if (!ledger) throw new Error('台账不存在')
+    if (ledger.status === '报废' || ledger.disposeStatus === '已报废') {
+      throw new Error('该物资已报废')
+    }
+    const qty = ledger.quantity
+    if (qty > 0) {
+      data.value.inOutRecords.unshift({
+        id: genId('io'),
+        category: ledger.category,
+        assetCode: ledger.assetCode,
+        assetName: ledger.name,
+        type: '出库',
+        quantity: qty,
+        operator,
+        orgName: ledger.orgName,
+        reason,
+        operateTime: nowStr(),
+        scene: '报废',
+        physicalId: ledger.physicalId,
+      })
+      ledger.quantity = 0
+    }
+    ledger.status = '报废'
+    ledger.disposeStatus = '已报废'
   }
 
   // --- StockBill 审批出入库（确认后才改库存）---
@@ -501,6 +537,55 @@ export const useDataStore = defineStore('data', () => {
     if (!bill) return
     if (bill.status !== '草稿') throw new Error('仅草稿可提交审批')
     bill.status = '待审批'
+  }
+
+  function updateStockBill(
+    id: string,
+    patch: Partial<
+      Pick<StockBill, 'assetCode' | 'quantity' | 'scene' | 'reason' | 'workOrderNo' | 'warehouseId' | 'warehouseName'>
+    >,
+  ) {
+    const bill = data.value.stockBills.find((b) => b.id === id)
+    if (!bill) throw new Error('单据不存在')
+    if (!['草稿', '已驳回'].includes(bill.status)) {
+      throw new Error('仅草稿或已驳回单据可修改')
+    }
+    if (patch.assetCode && patch.assetCode !== bill.assetCode) {
+      const ledger = getLedgerByCode(patch.assetCode)
+      if (!ledger) throw new Error('资产编码不存在')
+      bill.assetCode = ledger.assetCode
+      bill.assetName = ledger.name
+      bill.category = ledger.category
+      bill.orgId = ledger.orgId
+      bill.orgName = ledger.orgName
+      bill.warehouseId = ledger.warehouseId
+      bill.warehouseName = ledger.warehouseName
+    }
+    if (patch.quantity != null) bill.quantity = patch.quantity
+    if (patch.scene != null) bill.scene = patch.scene
+    if (patch.reason != null) bill.reason = patch.reason
+    if (patch.workOrderNo !== undefined) bill.workOrderNo = patch.workOrderNo
+    if (patch.warehouseId !== undefined) bill.warehouseId = patch.warehouseId
+    if (patch.warehouseName !== undefined) bill.warehouseName = patch.warehouseName
+  }
+
+  /** 驳回/草稿单据重新提交审批 */
+  function resubmitStockBill(id: string) {
+    const bill = data.value.stockBills.find((b) => b.id === id)
+    if (!bill) throw new Error('单据不存在')
+    if (!['草稿', '已驳回'].includes(bill.status)) {
+      throw new Error('当前状态不可重新提交')
+    }
+    const ledger = getLedgerByCode(bill.assetCode)
+    if (!ledger) throw new Error('资产不存在')
+    if (bill.billType === '出库' && ledger.category === 'instrument' && ledger.checkDueStatus === '超期') {
+      throw new Error('该仪器仪表校验已超期，禁止出库')
+    }
+    bill.status = '待审批'
+    bill.rejectReason = undefined
+    bill.approver = undefined
+    bill.approveTime = undefined
+    bill.approveRemark = undefined
   }
 
   function approveStockBill(id: string, approver: string, remark?: string) {
@@ -963,6 +1048,7 @@ export const useDataStore = defineStore('data', () => {
   ) {
     const line = data.value.inventoryLineItems.find((l) => l.id === id)
     if (!line) return
+    if (line.adjusted) throw new Error('该明细已过账，不可再次修改实盘')
     line.actualQuantity = actualQuantity
     line.status = actualQuantity === line.bookQuantity ? '已盘' : '有差异'
     if (extra?.checkMethod) line.checkMethod = extra.checkMethod
@@ -979,6 +1065,80 @@ export const useDataStore = defineStore('data', () => {
     else task.status = '已完成'
 
     if (task.parentId) recalcParentInventory(task.parentId)
+  }
+
+  /** 盘点差异过账：按实盘调整台账数量并生成流水 */
+  function postInventoryAdjustment(lineId: string, operator: string) {
+    const line = data.value.inventoryLineItems.find((l) => l.id === lineId)
+    if (!line) throw new Error('盘点明细不存在')
+    if (line.actualQuantity == null) throw new Error('尚未登记实盘数量')
+    if (line.status !== '有差异') throw new Error('仅有差异明细可过账')
+    if (line.adjusted) throw new Error('该明细已过账')
+
+    const ledger = getLedgerByCode(line.assetCode)
+    if (!ledger) throw new Error('台账不存在')
+
+    const diff = line.actualQuantity - line.bookQuantity
+    if (diff === 0) {
+      line.adjusted = true
+      line.adjustedAt = nowStr()
+      line.adjustedBy = operator
+      return
+    }
+
+    if (diff > 0) {
+      ledger.quantity += diff
+      data.value.inOutRecords.unshift({
+        id: genId('io'),
+        category: ledger.category,
+        assetCode: ledger.assetCode,
+        assetName: ledger.name,
+        type: '入库',
+        quantity: diff,
+        operator,
+        orgName: ledger.orgName,
+        reason: `盘点盘盈（账面 ${line.bookQuantity} → 实盘 ${line.actualQuantity}）`,
+        operateTime: nowStr(),
+        scene: '盘盈',
+        physicalId: ledger.physicalId,
+      })
+    } else {
+      const outQty = Math.abs(diff)
+      if (ledger.quantity < outQty) {
+        throw new Error(`台账库存不足，无法盘亏出库（当前 ${ledger.quantity}）`)
+      }
+      ledger.quantity -= outQty
+      data.value.inOutRecords.unshift({
+        id: genId('io'),
+        category: ledger.category,
+        assetCode: ledger.assetCode,
+        assetName: ledger.name,
+        type: '出库',
+        quantity: outQty,
+        operator,
+        orgName: ledger.orgName,
+        reason: `盘点盘亏（账面 ${line.bookQuantity} → 实盘 ${line.actualQuantity}）`,
+        operateTime: nowStr(),
+        scene: '盘亏',
+        physicalId: ledger.physicalId,
+      })
+    }
+
+    line.adjusted = true
+    line.adjustedAt = nowStr()
+    line.adjustedBy = operator
+  }
+
+  /** 对任务下全部有差异且未过账明细批量过账 */
+  function postInventoryTaskAdjustments(taskId: string, operator: string) {
+    const lines = data.value.inventoryLineItems.filter(
+      (l) => l.taskId === taskId && l.status === '有差异' && !l.adjusted,
+    )
+    if (!lines.length) throw new Error('没有待过账的差异明细')
+    for (const line of lines) {
+      postInventoryAdjustment(line.id, operator)
+    }
+    return lines.length
   }
 
   function recalcParentInventory(parentId: string) {
@@ -1041,6 +1201,10 @@ export const useDataStore = defineStore('data', () => {
       data.value.orgDeviceParams.unshift(payload)
     }
     return payload.id
+  }
+
+  function removeOrgDeviceParam(id: string) {
+    data.value.orgDeviceParams = data.value.orgDeviceParams.filter((p) => p.id !== id)
   }
 
   function calculateAllQuotas() {
@@ -1188,8 +1352,11 @@ export const useDataStore = defineStore('data', () => {
     addLedger,
     updateLedger,
     removeLedger,
+    disposeLedger,
     createStockBill,
     submitStockBill,
+    updateStockBill,
+    resubmitStockBill,
     approveStockBill,
     rejectStockBill,
     confirmStockBill,
@@ -1209,10 +1376,13 @@ export const useDataStore = defineStore('data', () => {
     addInventoryTask,
     dispatchInventoryTask,
     updateInventoryLine,
+    postInventoryAdjustment,
+    postInventoryTaskAdjustments,
     removeInventoryTask,
     saveQuotaRule,
     removeQuotaRule,
     saveOrgDeviceParam,
+    removeOrgDeviceParam,
     calculateAllQuotas,
     resetAllData,
   }

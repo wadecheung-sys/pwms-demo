@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataStore } from '@/stores/data'
 import type { QuotaFormulaType } from '@/types'
 
@@ -73,14 +73,27 @@ function saveRule() {
   ruleDialog.value = false
 }
 
-function openParam() {
-  Object.assign(paramForm, {
-    id: '',
-    orgId: dataStore.organizations[0]?.id ?? '',
-    warehouseId: '',
-    ruleId: dataStore.quotaRules[0]?.id ?? '',
-    deviceCount: 100,
-  })
+function openParam(edit?: boolean, id?: string) {
+  if (edit && id) {
+    const p = dataStore.orgDeviceParams.find((x) => x.id === id)
+    if (p) {
+      Object.assign(paramForm, {
+        id: p.id,
+        orgId: p.orgId,
+        warehouseId: p.warehouseId || '',
+        ruleId: p.ruleId,
+        deviceCount: p.deviceCount,
+      })
+    }
+  } else {
+    Object.assign(paramForm, {
+      id: '',
+      orgId: dataStore.organizations[0]?.id ?? '',
+      warehouseId: '',
+      ruleId: dataStore.quotaRules[0]?.id ?? '',
+      deviceCount: 100,
+    })
+  }
   paramDialog.value = true
 }
 
@@ -88,6 +101,26 @@ function saveParam() {
   dataStore.saveOrgDeviceParam({ ...paramForm, id: paramForm.id || undefined })
   ElMessage.success('参数已保存')
   paramDialog.value = false
+}
+
+async function removeRule(id: string) {
+  try {
+    await ElMessageBox.confirm('确认删除该定额规则？关联参数需重新绑定。', '删除确认', { type: 'warning' })
+    dataStore.removeQuotaRule(id)
+    ElMessage.success('已删除')
+  } catch {
+    /* cancel */
+  }
+}
+
+async function removeParam(id: string) {
+  try {
+    await ElMessageBox.confirm('确认删除该单位参数？', '删除确认', { type: 'warning' })
+    dataStore.removeOrgDeviceParam(id)
+    ElMessage.success('已删除')
+  } catch {
+    /* cancel */
+  }
 }
 
 function calc() {
@@ -115,7 +148,7 @@ const titles = {
         </div>
         <div class="panel-actions__right">
           <el-button v-if="action === 'rules'" type="primary" @click="openRule(false)">新增规则</el-button>
-          <el-button v-if="action === 'params'" type="primary" @click="openParam">填报参数</el-button>
+          <el-button v-if="action === 'params'" type="primary" @click="openParam(false)">填报参数</el-button>
           <el-button v-if="action === 'results' || action === 'catalog'" type="primary" @click="calc">重新测算</el-button>
         </div>
       </div>
@@ -133,9 +166,10 @@ const titles = {
         <el-table-column prop="t" label="T(月)" width="80" />
         <el-table-column prop="p" label="P(年)" width="80" />
         <el-table-column prop="remark" label="说明" min-width="140" />
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="140">
           <template #default="{ row }">
             <el-button link type="primary" @click="openRule(true, row.id)">编辑</el-button>
+            <el-button link type="danger" @click="removeRule(row.id)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -150,6 +184,12 @@ const titles = {
         </el-table-column>
         <el-table-column prop="deviceCount" label="设备量 A" width="100" />
         <el-table-column prop="updatedAt" label="更新时间" width="170" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openParam(true, row.id)">编辑</el-button>
+            <el-button link type="danger" @click="removeParam(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
       </el-table>
 
       <el-table v-else :data="dataStore.quotaResults" border stripe>
