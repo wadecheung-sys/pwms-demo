@@ -82,21 +82,55 @@ function initFilters() {
   const defaults = getFilterDefaults(subModule.value)
   draft.value = { ...defaults }
   applied.value = { ...defaults }
-  if (subModule.value === 'ledger' && route.query.warehouseId) {
-    draft.value.warehouseId = route.query.warehouseId as string
-    applied.value.warehouseId = route.query.warehouseId as string
+  if (subModule.value === 'ledger') {
+    const q = route.query
+    if (q.warehouseId) {
+      draft.value.warehouseId = q.warehouseId as string
+      applied.value.warehouseId = q.warehouseId as string
+    }
+    if (q.orgId) {
+      draft.value.orgId = q.orgId as string
+      applied.value.orgId = q.orgId as string
+    }
+    if (q.status) {
+      draft.value.status = q.status as string
+      applied.value.status = q.status as string
+    }
+    if (q.inStock) {
+      draft.value.inStock = q.inStock as string
+      applied.value.inStock = q.inStock as string
+    }
   }
 }
 
 watch([category, subModule], initFilters, { immediate: true })
-watch(() => route.query.warehouseId, initFilters)
+watch(
+  () =>
+    [
+      String(route.query.warehouseId || ''),
+      String(route.query.orgId || ''),
+      String(route.query.status || ''),
+      String(route.query.inStock || ''),
+    ] as const,
+  () => {
+    if (subModule.value === 'ledger') initFilters()
+  },
+)
 
 function search() {
   applied.value = { ...draft.value }
 }
 
 function resetFilters() {
-  initFilters()
+  const defaults = getFilterDefaults(subModule.value)
+  draft.value = { ...defaults }
+  applied.value = { ...defaults }
+  if (
+    subModule.value === 'ledger' &&
+    (route.query.warehouseId || route.query.orgId || route.query.status || route.query.inStock)
+  ) {
+    router.replace({ path: route.path, query: {} })
+  }
 }
 
 const categoryData = computed(() => {
@@ -155,9 +189,15 @@ const filterFields = computed(() =>
   ),
 )
 
+const ledgerOrgIdSet = computed(() => {
+  const orgId = String(applied.value.orgId || '')
+  if (subModule.value !== 'ledger' || !orgId) return null
+  return new Set(dataStore.getOrgDescendantIdsFrom(orgId, true))
+})
+
 const tableData = computed(() => {
   const result = categoryData.value.filter((item) =>
-    applyAssetFilter(subModule.value, item, applied.value),
+    applyAssetFilter(subModule.value, item, applied.value, { orgIdSet: ledgerOrgIdSet.value }),
   )
   resultCount.value = result.length
   return result

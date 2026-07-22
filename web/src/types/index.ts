@@ -3,7 +3,7 @@ export type AssetCategory = 'spare' | 'instrument' | 'tool'
 /** 设备台账类别（不含生产仓地点本身） */
 export type AssetLedgerCategory = AssetCategory
 
-/** 组织机构类型：东北分部 → 省公司 → 地市公司 → 县公司 → 班组 */
+/** 组织机构类型：分部 → 省公司 → 地市公司 → 县公司 → 供电所(team) */
 export type OrgType = 'division' | 'province' | 'city' | 'county' | 'team'
 
 export interface Organization {
@@ -59,7 +59,8 @@ export interface Person {
 /** 生产仓地点 / 仓室主数据 */
 export type WarehouseUseStatus = '在用' | '停用' | '改造中' | '待建'
 
-export type WarehouseAssetNature = '自有' | '租赁' | '借用'
+/** 仓室资产性质：省公司自有 / 租赁（租赁需填租赁单位） */
+export type WarehouseAssetNature = '省公司自有' | '租赁'
 
 export type WarehouseSiteType = '备品仓' | '仪器室' | '工器具室' | '综合仓'
 
@@ -71,6 +72,8 @@ export interface WarehouseSite {
   orgId: string
   orgName: string
   assetNature: WarehouseAssetNature
+  /** 租赁单位（资产性质=租赁时必填） */
+  leaseUnit?: string
   useStatus: WarehouseUseStatus
   area: number
   keeperId: string
@@ -89,9 +92,19 @@ export interface WarehouseSite {
 
 export const warehouseUseStatusOptions: WarehouseUseStatus[] = ['在用', '停用', '改造中', '待建']
 
-export const warehouseAssetNatureOptions: WarehouseAssetNature[] = ['自有', '租赁', '借用']
+export const warehouseAssetNatureOptions: WarehouseAssetNature[] = ['省公司自有', '租赁']
+
+/** 省公司全称（展示用） */
+export const PROVINCE_COMPANY_FULL_NAME = '国网星海省电力有限公司'
 
 export const warehouseSiteTypeOptions: WarehouseSiteType[] = ['备品仓', '仪器室', '工器具室', '综合仓']
+
+export type SpecialtyType = '输电' | '变电' | '配电' | '直流' | '通信' | '综合'
+
+/** 增加方式（台账「增加方式」） */
+export type IncreaseMode = '购置' | '调拨转入' | '工程转备品' | '盘盈' | '其他'
+
+export const increaseModeOptions: IncreaseMode[] = ['购置', '调拨转入', '工程转备品', '盘盈', '其他']
 
 export interface Manufacturer {
   id: string
@@ -110,9 +123,20 @@ export interface DeviceType {
   code: string
   unit: string
   description: string
+  /** 所属专业（规范录入与统计） */
+  specialty?: SpecialtyType
 }
 
-export type SpecialtyType = '输电' | '变电' | '配电' | '直流' | '通信' | '综合'
+/** 按物资类型配置的试验/检定周期（天） */
+export interface CheckCycleSetting {
+  id: string
+  category: AssetCategory
+  typeName: string
+  /** 周期天数 */
+  cycleDays: number
+  /** spare=试验，instrument/tool=检定 */
+  checkKind: 'trial' | 'calibration'
+}
 
 export type CheckDueStatus = '正常' | '临期' | '超期' | '未校验'
 
@@ -162,6 +186,18 @@ export interface AssetLedger {
   spareSource?: string
   trialDueStatus?: CheckDueStatus
   warehouseAgeDays?: number
+  /** 入库时间（确认入库后写入，用于计算在库时长） */
+  inboundTime?: string
+  /** 是否在库（语义字段，可由 status 推导） */
+  inStock?: boolean
+  /** 是否可用 */
+  usable?: boolean
+  /** 出库领用：预计归还日（仪器/工器具） */
+  expectedReturnDate?: string
+  /** 出库用途工程 */
+  projectName?: string
+  /** 增加方式 */
+  increaseMode?: IncreaseMode
 }
 
 /** 历史流水（确认单据后生成） */
@@ -177,16 +213,28 @@ export interface InOutRecord {
   reason: string
   operateTime: string
   billId?: string
+  /** @deprecated 使用 fundingSource */
   scene?: string
+  fundingSource?: FundingSource
   workOrderNo?: string
   physicalId?: string
+  projectName?: string
+  expectedReturnDate?: string
+  approver?: string
+  /** 仪器/工器具出库后是否已归还 */
+  returned?: boolean
+  returnTime?: string
 }
 
 export type StockBillType = '入库' | '出库'
 
-export type InboundScene = '采购' | '归还' | '调拨' | '检修回收' | '物资库转入' | '盘盈'
+/** 资金来源（替代原「场景」） */
+export type FundingSource = '成本' | '零购' | '工程转备品'
 
-export type OutboundScene = '日常领用' | '抢修领用' | '调拨' | '送检' | '盘亏' | '报废'
+/** @deprecated 兼容旧种子，新逻辑用 FundingSource */
+export type InboundScene = FundingSource | '采购' | '归还' | '调拨' | '检修回收' | '物资库转入' | '盘盈'
+
+export type OutboundScene = FundingSource | '日常领用' | '抢修领用' | '调拨' | '送检' | '盘亏' | '报废'
 
 export type StockBillStatus = '草稿' | '待审批' | '已通过' | '已驳回' | '待确认' | '已确认'
 
@@ -195,16 +243,22 @@ export interface StockBill {
   billNo: string
   category: AssetCategory
   billType: StockBillType
-  scene: InboundScene | OutboundScene
+  /** 资金来源 */
+  fundingSource: FundingSource
+  /** @deprecated 兼容旧数据 */
+  scene?: InboundScene | OutboundScene
   status: StockBillStatus
   assetCode: string
   assetName: string
+  /** 设备型号（冗余展示） */
+  model?: string
   quantity: number
   applicant: string
   orgId: string
   orgName: string
   warehouseId?: string
   warehouseName?: string
+  /** 出库工作票/工单号；入库一般不用 */
   workOrderNo?: string
   reason: string
   physicalId?: string
@@ -213,12 +267,20 @@ export interface StockBill {
   approveRemark?: string
   confirmer?: string
   confirmTime?: string
+  /** 入库确认时间，等同库存入库时间 */
+  inboundTime?: string
   createTime: string
   rejectReason?: string
+  projectName?: string
+  expectedReturnDate?: string
 }
 
-export const inboundSceneOptions: InboundScene[] = ['采购', '归还', '调拨', '检修回收', '物资库转入', '盘盈']
-export const outboundSceneOptions: OutboundScene[] = ['日常领用', '抢修领用', '调拨', '送检', '盘亏', '报废']
+export const fundingSourceOptions: FundingSource[] = ['成本', '零购', '工程转备品']
+
+/** @deprecated */
+export const inboundSceneOptions: FundingSource[] = fundingSourceOptions
+/** @deprecated */
+export const outboundSceneOptions: FundingSource[] = fundingSourceOptions
 
 export interface FaultRecord {
   id: string
@@ -273,6 +335,8 @@ export interface InventoryTask {
   totalCount: number
   checkedCount: number
   status: '待盘点' | '盘点中' | '已完成'
+  /** 计划开始日期 */
+  startDate?: string
   deadline: string
   createTime: string
   parentId: string | null
@@ -344,9 +408,12 @@ export interface QuotaResult {
   formulaType: QuotaFormulaType
   deviceCount: number
   standardQty: number
-  upperLimit: number
-  lowerLimit: number
+  /** @deprecated 甲方要求取消上下限展示，保留字段兼容旧数据 */
+  upperLimit?: number
+  lowerLimit?: number
   actualQty: number
+  /** 可用库存 */
+  availableQty?: number
   shortage: number
   overage: number
   calculatedAt: string
@@ -388,26 +455,86 @@ export const categoryLabels: Record<AssetCategory, string> = {
 export const specialtyOptions: SpecialtyType[] = ['输电', '变电', '配电', '直流', '通信', '综合']
 
 export const subModuleLabels = {
-  ledger: '台账录入',
+  ledger: '台账管理',
   inout: '出入库记录',
   fault: '故障记录',
   maintenance: '维修记录',
   inventory: '盘点记录',
+  trial: '试验记录',
+  calibration: '检定记录',
+  retirement: '退役报废',
+  outboundStats: '出库统计',
 } as const
 
 export type SubModule = keyof typeof subModuleLabels
 
-/** 出入库三级页动作 */
+/** 出入库三级页动作（审批页合并原确认） */
 export type InOutPageAction =
   | 'in-apply'
   | 'in-approve'
-  | 'in-confirm'
   | 'out-apply'
   | 'out-approve'
-  | 'out-confirm'
   | 'stock-status'
   | 'shortage'
   | 'inout-log'
+  | 'transfer'
 
 /** 盘点三级页动作 */
 export type InventoryPageAction = 'plan' | 'execute' | 'progress'
+
+/** 转仓/调拨单（收-发-调-转中的调转） */
+export type TransferBillStatus = '待审批' | '已驳回' | '待确认' | '已完成'
+
+export interface TransferBill {
+  id: string
+  billNo: string
+  category: AssetCategory
+  assetCode: string
+  assetName: string
+  quantity: number
+  fromWarehouseId: string
+  fromWarehouseName: string
+  toWarehouseId: string
+  toWarehouseName: string
+  applicant: string
+  orgId: string
+  orgName: string
+  reason: string
+  status: TransferBillStatus
+  createTime: string
+  approver?: string
+  approveTime?: string
+  rejectReason?: string
+  confirmer?: string
+  confirmTime?: string
+  physicalId?: string
+}
+
+/** 试验/检定记录 */
+export interface CheckRecord {
+  id: string
+  category: AssetCategory
+  assetCode: string
+  assetName: string
+  checkKind: 'trial' | 'calibration'
+  checkDate: string
+  nextDueDate: string
+  result: '合格' | '不合格'
+  operator: string
+  orgName: string
+  remark?: string
+}
+
+/** 退役报废记录 */
+export interface RetirementRecord {
+  id: string
+  category: AssetCategory
+  assetCode: string
+  assetName: string
+  reason: string
+  applicant: string
+  orgName: string
+  status: '待审批' | '已报废'
+  createTime: string
+  approveTime?: string
+}

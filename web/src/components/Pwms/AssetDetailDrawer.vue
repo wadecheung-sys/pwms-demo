@@ -3,6 +3,7 @@ import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { AssetLifecycleEvent } from '@/types'
 import { useDataStore } from '@/stores/data'
+import { calcWarehouseAgeDays } from '@/utils/pwms/ledgerFlags'
 
 const props = defineProps<{
   assetCode: string | null
@@ -55,6 +56,28 @@ function eventIcon(type: AssetLifecycleEvent['type']) {
   const map = { ledger: 'Document', inout: 'Sort', fault: 'Warning', maintenance: 'Tools', inventory: 'List' }
   return map[type] ?? 'InfoFilled'
 }
+
+function inStockLabel() {
+  const l = ledger.value
+  if (!l) return '—'
+  if (l.inStock != null) return l.inStock ? '在库' : '不在库'
+  return l.status === '在库' ? '在库' : l.status
+}
+
+function qualifyLabel() {
+  const l = ledger.value
+  if (!l) return '—'
+  if (l.category === 'spare') return l.trialDueStatus || l.checkDueStatus || '—'
+  return l.checkDueStatus || '—'
+}
+
+function usableLabel() {
+  const l = ledger.value
+  if (!l) return '—'
+  if (l.usable != null) return l.usable ? '可用' : '不可用'
+  if (l.disposeStatus === '占用' || l.status === '在用') return '不可用'
+  return '可用'
+}
 </script>
 
 <template>
@@ -80,33 +103,37 @@ function eventIcon(type: AssetLifecycleEvent['type']) {
         </el-descriptions-item>
         <el-descriptions-item label="保管人">{{ ledger.keeperName || '—' }}</el-descriptions-item>
         <el-descriptions-item label="库存">{{ ledger.quantity }} {{ ledger.unit }}</el-descriptions-item>
-        <el-descriptions-item label="台账状态">
-          <el-tag size="small">{{ ledger.status }}</el-tag>
+        <el-descriptions-item label="在库">
+          <el-tag size="small" :type="inStockLabel() === '在库' ? 'success' : 'info'">{{ inStockLabel() }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="处置状态">{{ ledger.disposeStatus || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="合格">
+          <el-tag
+            size="small"
+            :type="qualifyLabel() === '超期' ? 'danger' : qualifyLabel() === '临期' ? 'warning' : 'success'"
+          >
+            {{ qualifyLabel() }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="可用">
+          <el-tag size="small" :type="usableLabel() === '可用' ? 'success' : 'warning'">{{ usableLabel() }}</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="设备状态">{{ ledger.deviceStatus || '—' }}</el-descriptions-item>
         <el-descriptions-item label="生产厂家">{{ ledger.manufacturer || '—' }}</el-descriptions-item>
         <el-descriptions-item label="规格型号">{{ ledger.model || '—' }}</el-descriptions-item>
         <el-descriptions-item label="电压等级">{{ ledger.voltageLevel || '—' }}</el-descriptions-item>
         <el-descriptions-item label="资产性质">{{ ledger.assetNature || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="增加方式">{{ ledger.increaseMode || '—' }}</el-descriptions-item>
         <el-descriptions-item label="购入日期">{{ ledger.purchaseDate }}</el-descriptions-item>
         <el-descriptions-item label="保修截止">{{ ledger.warrantyDate }}</el-descriptions-item>
-        <el-descriptions-item v-if="ledger.category === 'instrument'" label="最近校验">
+        <el-descriptions-item v-if="ledger.category === 'instrument' || ledger.category === 'spare'" label="最近校验/试验">
           {{ ledger.lastCheckDate || '—' }}
-        </el-descriptions-item>
-        <el-descriptions-item v-if="ledger.category === 'instrument'" label="校验状态">
-          <el-tag
-            size="small"
-            :type="ledger.checkDueStatus === '超期' ? 'danger' : ledger.checkDueStatus === '临期' ? 'warning' : 'success'"
-          >
-            {{ ledger.checkDueStatus || '—' }}
-          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item v-if="ledger.category === 'spare'" label="备品来源">
           {{ ledger.spareSource || '—' }}
         </el-descriptions-item>
-        <el-descriptions-item v-if="ledger.warehouseAgeDays != null" label="库龄(天)">
-          {{ ledger.warehouseAgeDays }}
+        <el-descriptions-item label="入库时间">{{ ledger.inboundTime || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="在库时长(天)">
+          {{ calcWarehouseAgeDays(ledger.inboundTime) ?? ledger.warehouseAgeDays ?? '—' }}
         </el-descriptions-item>
       </el-descriptions>
 

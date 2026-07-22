@@ -17,6 +17,15 @@ export interface LedgerFilters {
   typeName: string
   status: string
   warehouseId: string
+  specialty: string
+  /** 在库语义：'' | '1' | '0' */
+  inStock: string
+  /** 合格状态：正常/临期/超期/未校验 */
+  qualifyStatus: string
+  /** 可用：'' | '1' | '0' */
+  usable: string
+  increaseMode: string
+  deviceStatus: string
 }
 
 export interface InOutFilters {
@@ -64,6 +73,28 @@ export const ledgerFilterDefaults: LedgerFilters = {
   typeName: '',
   status: '',
   warehouseId: '',
+  specialty: '',
+  inStock: '',
+  qualifyStatus: '',
+  usable: '',
+  increaseMode: '',
+  deviceStatus: '',
+}
+
+function ledgerQualify(item: AssetLedger): string {
+  if (item.category === 'spare') return item.trialDueStatus || item.checkDueStatus || '未校验'
+  return item.checkDueStatus || '未校验'
+}
+
+function ledgerInStock(item: AssetLedger): boolean {
+  if (item.inStock != null) return item.inStock
+  return item.status === '在库'
+}
+
+function ledgerUsable(item: AssetLedger): boolean {
+  if (item.usable != null) return item.usable
+  if (item.disposeStatus === '占用' || item.status === '在用' || item.status === '报废') return false
+  return ledgerInStock(item)
 }
 
 export function buildLedgerFilterFields(
@@ -76,11 +107,25 @@ export function buildLedgerFilterFields(
     value: w.id,
   }))
   return [
-    { key: 'keyword', type: 'input', placeholder: '设备名称/编码', width: '180px' },
-    { key: 'orgId', type: 'select', placeholder: '组织机构', options: orgOptions(organizations), width: '150px' },
+    {
+      key: 'keyword',
+      type: 'input',
+      label: '关键字',
+      placeholder: '名称/编码/实物ID/资产编号',
+      width: '200px',
+    },
+    {
+      key: 'orgId',
+      type: 'select',
+      label: '组织',
+      placeholder: '组织机构',
+      options: orgOptions(organizations),
+      width: '160px',
+    },
     {
       key: 'warehouseId',
       type: 'select',
+      label: '仓室',
       placeholder: '生产仓地点',
       options: [{ label: '全部仓室', value: '' }, ...siteOptions],
       width: '180px',
@@ -88,6 +133,7 @@ export function buildLedgerFilterFields(
     {
       key: 'typeName',
       type: 'select',
+      label: '类型',
       placeholder: '设备类型',
       options: uniqueOptions(
         items.map((i) => i.typeName),
@@ -96,22 +142,117 @@ export function buildLedgerFilterFields(
       width: '130px',
     },
     {
+      key: 'specialty',
+      type: 'select',
+      label: '专业',
+      placeholder: '专业分类',
+      options: uniqueOptions(
+        items.map((i) => i.specialty || ''),
+        '全部专业',
+      ).filter((o) => o.value !== '' || o.label === '全部专业'),
+      width: '120px',
+    },
+    {
       key: 'status',
       type: 'select',
-      placeholder: '状态',
+      label: '台账状态',
+      placeholder: '台账状态',
       options: uniqueOptions(items.map((i) => i.status), '全部状态'),
+      width: '120px',
+    },
+    {
+      key: 'inStock',
+      type: 'select',
+      label: '在库',
+      placeholder: '是否在库',
+      options: [
+        { label: '全部', value: '' },
+        { label: '在库', value: '1' },
+        { label: '不在库', value: '0' },
+      ],
+      width: '110px',
+    },
+    {
+      key: 'qualifyStatus',
+      type: 'select',
+      label: '合格',
+      placeholder: '合格状态',
+      options: [
+        { label: '全部', value: '' },
+        { label: '正常', value: '正常' },
+        { label: '临期', value: '临期' },
+        { label: '超期', value: '超期' },
+        { label: '未校验', value: '未校验' },
+      ],
+      width: '110px',
+    },
+    {
+      key: 'usable',
+      type: 'select',
+      label: '可用',
+      placeholder: '是否可用',
+      options: [
+        { label: '全部', value: '' },
+        { label: '可用', value: '1' },
+        { label: '不可用', value: '0' },
+      ],
+      width: '110px',
+    },
+    {
+      key: 'deviceStatus',
+      type: 'select',
+      label: '设备状态',
+      placeholder: '设备状态',
+      options: uniqueOptions(
+        items.map((i) => i.deviceStatus || ''),
+        '全部设备状态',
+      ).filter((o) => o.value !== '' || o.label === '全部设备状态'),
+      width: '130px',
+    },
+    {
+      key: 'increaseMode',
+      type: 'select',
+      label: '增加方式',
+      placeholder: '增加方式',
+      options: uniqueOptions(
+        items.map((i) => i.increaseMode || ''),
+        '全部方式',
+      ).filter((o) => o.value !== '' || o.label === '全部方式'),
       width: '120px',
     },
   ]
 }
 
-export function matchLedger(item: AssetLedger, f: LedgerFilters): boolean {
-  return (
-    matchExact(item.orgId, f.orgId) &&
-    matchExact(item.typeName, f.typeName) &&
-    matchExact(item.status, f.status) &&
-    matchExact(item.warehouseId, f.warehouseId) &&
-    matchKeyword(f.keyword, item.name, item.assetCode, item.manufacturer, item.warehouseName)
+export function matchLedger(
+  item: AssetLedger,
+  f: LedgerFilters,
+  opts?: { orgIdSet?: Set<string> | null },
+): boolean {
+  if (opts?.orgIdSet?.size) {
+    if (!opts.orgIdSet.has(item.orgId)) return false
+  } else if (!matchExact(item.orgId, f.orgId)) {
+    return false
+  }
+  if (!matchExact(item.warehouseId, f.warehouseId)) return false
+  if (!matchExact(item.typeName, f.typeName)) return false
+  if (!matchExact(item.status, f.status)) return false
+  if (f.specialty && (item.specialty || '') !== f.specialty) return false
+  if (f.increaseMode && (item.increaseMode || '') !== f.increaseMode) return false
+  if (f.deviceStatus && (item.deviceStatus || '') !== f.deviceStatus) return false
+  if (f.inStock === '1' && !ledgerInStock(item)) return false
+  if (f.inStock === '0' && ledgerInStock(item)) return false
+  if (f.usable === '1' && !ledgerUsable(item)) return false
+  if (f.usable === '0' && ledgerUsable(item)) return false
+  if (f.qualifyStatus && ledgerQualify(item) !== f.qualifyStatus) return false
+  return matchKeyword(
+    f.keyword,
+    item.name,
+    item.assetCode,
+    item.manufacturer,
+    item.warehouseName,
+    item.physicalId,
+    item.assetNo,
+    item.keeperName,
   )
 }
 
@@ -317,10 +458,11 @@ export function applyAssetFilter(
   subModule: SubModule,
   item: unknown,
   filters: Record<string, unknown>,
+  opts?: { orgIdSet?: Set<string> | null },
 ): boolean {
   switch (subModule) {
     case 'ledger':
-      return matchLedger(item as AssetLedger, filters as unknown as LedgerFilters)
+      return matchLedger(item as AssetLedger, filters as unknown as LedgerFilters, opts)
     case 'inout':
       return matchInOut(item as InOutRecord, filters as unknown as InOutFilters)
     case 'fault':

@@ -170,7 +170,7 @@ async function handleDelete(row: Organization) {
 <template>
   <div class="page-container org-page">
     <PageTip class="page-shell__tip">
-      组织层级：东北分部 → 省公司 → 地市公司 → 县公司 → 班组。
+      组织层级：分部 → 省公司 → 地市公司 → 县公司 → 供电所。
     </PageTip>
 
     <div class="org-layout">
@@ -249,7 +249,7 @@ async function handleDelete(row: Organization) {
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑组织' : '新增组织'" width="560px" destroy-on-close>
-      <p class="dialog-hint">请按层级选择正确的上级组织；东北分部为顶级节点，无需上级。</p>
+      <p class="dialog-hint">请按层级选择正确的上级组织；分部为顶级节点，无需上级。</p>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="96px">
         <el-form-item label="组织名称" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="组织编码" prop="code"><el-input v-model="form.code" placeholder="如 SY-CITY" /></el-form-item>

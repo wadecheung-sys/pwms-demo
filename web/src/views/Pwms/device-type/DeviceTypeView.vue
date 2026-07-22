@@ -11,7 +11,8 @@ import { useTableFilter } from '@/composables/useTableFilter'
 import { usePagination } from '@/composables/usePagination'
 import { useDataStore } from '@/stores/data'
 import { matchExact, matchKeyword, uniqueOptions } from '@/utils/pwms/filter'
-import type { AssetCategory, DeviceType } from '@/types'
+import type { AssetCategory, DeviceType, SpecialtyType } from '@/types'
+import { specialtyOptions } from '@/types'
 
 const route = useRoute()
 const dataStore = useDataStore()
@@ -22,31 +23,75 @@ const formRef = ref<FormInstance>()
 const category = computed(() => route.path.split('/').pop() as AssetCategory)
 const categoryData = computed(() => dataStore.deviceTypes.filter((d) => d.category === category.value))
 
-const filterDefaults = { keyword: '', unit: '' }
+const filterDefaults = { keyword: '', unit: '', specialty: '' }
 const { draft, search, reset, filterListWithCount, resultCount } = useTableFilter(filterDefaults, (item, f) => {
   const d = item as DeviceType
-  return matchExact(d.unit, f.unit as string) && matchKeyword(f.keyword as string, d.name, d.code, d.description)
+  return (
+    matchExact(d.unit, f.unit as string) &&
+    matchExact(d.specialty || '', f.specialty as string) &&
+    matchKeyword(f.keyword as string, d.name, d.code, d.description)
+  )
 })
 
 const filterFields = computed<FilterField[]>(() => [
   { key: 'keyword', type: 'input', placeholder: '类型名称/编码/说明', width: '200px' },
-  { key: 'unit', type: 'select', placeholder: '计量单位', options: uniqueOptions(categoryData.value.map((d) => d.unit), '全部单位'), width: '130px' },
+  {
+    key: 'specialty',
+    type: 'select',
+    placeholder: '专业',
+    options: uniqueOptions(categoryData.value.map((d) => d.specialty || ''), '全部专业'),
+    width: '120px',
+  },
+  {
+    key: 'unit',
+    type: 'select',
+    placeholder: '计量单位',
+    options: uniqueOptions(categoryData.value.map((d) => d.unit), '全部单位'),
+    width: '130px',
+  },
 ])
 
 const tableData = computed(() => filterListWithCount(categoryData.value))
 const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
-const form = reactive({ code: '', name: '', unit: '', description: '' })
+/** 按专业分组展示 */
+const groupedPageData = computed(() => {
+  const groups = new Map<string, DeviceType[]>()
+  for (const row of pageData.value) {
+    const key = row.specialty || '未分类'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(row)
+  }
+  return [...groups.entries()].map(([specialty, rows]) => ({ specialty, rows }))
+})
+
+const form = reactive({
+  code: '',
+  name: '',
+  unit: '',
+  specialty: '综合' as SpecialtyType,
+  description: '',
+})
 const rules: FormRules = {
   code: [{ required: true, message: '请输入类型编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入类型名称', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入计量单位', trigger: 'blur' }],
+  specialty: [{ required: true, message: '请选择专业', trigger: 'change' }],
 }
 
 function openDialog(row?: DeviceType) {
   editingId.value = row?.id ?? null
-  if (row) Object.assign(form, { code: row.code, name: row.name, unit: row.unit, description: row.description })
-  else Object.assign(form, { code: '', name: '', unit: '', description: '' })
+  if (row) {
+    Object.assign(form, {
+      code: row.code,
+      name: row.name,
+      unit: row.unit,
+      specialty: row.specialty || '综合',
+      description: row.description,
+    })
+  } else {
+    Object.assign(form, { code: '', name: '', unit: '', specialty: '综合', description: '' })
+  }
   dialogVisible.value = true
 }
 
@@ -79,30 +124,45 @@ async function handleDelete(row: DeviceType) {
 </script>
 
 <template>
-  <PageShell tip="维护设备类型编码、名称与计量单位，供台账与出入库选用。">
+  <PageShell tip="维护设备类型编码、名称、专业分类与计量单位，按专业分组展示，供台账与出入库选用。">
     <PageHeader title="设备类型">
       <template #actions>
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon> 新增类型</el-button>
       </template>
     </PageHeader>
 
-    <FilterBar :fields="filterFields" :model-value="draft" :result-count="resultCount" @update:model-value="Object.assign(draft, $event)" @search="search" @reset="reset" />
+    <FilterBar
+      :fields="filterFields"
+      :model-value="draft"
+      :result-count="resultCount"
+      @update:model-value="Object.assign(draft, $event)"
+      @search="search"
+      @reset="reset"
+    />
 
-    <el-table :data="pageData" stripe border>
-      <el-table-column prop="code" label="类型编码" width="110" />
-      <el-table-column prop="name" label="类型名称" width="120" />
-      <el-table-column prop="unit" label="计量单位" width="90" align="center" />
-      <el-table-column prop="description" label="说明" min-width="200" />
-      <el-table-column label="操作" width="168" fixed="right">
-        <template #default="{ row }">
-          <div class="table-actions">
-            <el-button type="primary" size="small" plain @click="openDialog(row)">编辑</el-button>
-            <el-button type="danger" size="small" plain @click="handleDelete(row)">删除</el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty description="暂无设备类型" /></template>
-    </el-table>
+    <div v-for="group in groupedPageData" :key="group.specialty" class="specialty-group">
+      <div class="group-head">
+        <span class="group-title">{{ group.specialty }}</span>
+        <span class="group-count">{{ group.rows.length }} 项</span>
+      </div>
+      <el-table :data="group.rows" stripe border>
+        <el-table-column prop="code" label="类型编码" width="110" />
+        <el-table-column prop="name" label="类型名称" width="120" />
+        <el-table-column prop="specialty" label="专业" width="90" align="center" />
+        <el-table-column prop="unit" label="计量单位" width="90" align="center" />
+        <el-table-column prop="description" label="说明" min-width="200" />
+        <el-table-column label="操作" width="168" fixed="right">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button type="primary" size="small" plain @click="openDialog(row)">编辑</el-button>
+              <el-button type="danger" size="small" plain @click="handleDelete(row)">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无设备类型" /></template>
+      </el-table>
+    </div>
+    <el-empty v-if="!groupedPageData.length" description="暂无设备类型" />
     <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
@@ -110,6 +170,11 @@ async function handleDelete(row: DeviceType) {
     <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
       <el-form-item label="类型编码" prop="code"><el-input v-model="form.code" placeholder="如 WH-007" /></el-form-item>
       <el-form-item label="类型名称" prop="name"><el-input v-model="form.name" /></el-form-item>
+      <el-form-item label="专业分类" prop="specialty">
+        <el-select v-model="form.specialty" style="width: 100%">
+          <el-option v-for="s in specialtyOptions" :key="s" :label="s" :value="s" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="计量单位" prop="unit"><el-input v-model="form.unit" placeholder="如 台、套、个" /></el-form-item>
       <el-form-item label="说明"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
     </el-form>
@@ -119,3 +184,24 @@ async function handleDelete(row: DeviceType) {
     </template>
   </el-dialog>
 </template>
+
+<style scoped lang="scss">
+.specialty-group {
+  margin-bottom: 20px;
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.group-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pwms-text, var(--el-text-color-primary));
+}
+.group-count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

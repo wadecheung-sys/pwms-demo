@@ -12,9 +12,10 @@ import { usePagination } from '@/composables/usePagination'
 import { useDataScope } from '@/composables/useDataScope'
 import { useDataStore } from '@/stores/data'
 import { matchExact, matchKeyword } from '@/utils/pwms/filter'
-import { formatOrgOptionLabel, getOrgDescendantIds } from '@/utils/pwms/org'
+import { enrichWarehouseAffiliation, formatOrgOptionLabel, getOrgDescendantIds } from '@/utils/pwms/org'
 import type { WarehouseSite, WarehouseUseStatus } from '@/types'
 import {
+  PROVINCE_COMPANY_FULL_NAME,
   warehouseAssetNatureOptions,
   warehouseSiteTypeOptions,
   warehouseUseStatusOptions,
@@ -120,15 +121,30 @@ const filterFields = computed<FilterField[]>(() => [
   },
 ])
 
-const tableData = computed(() => filterListWithCount(scopedSites.value))
+const tableData = computed(() =>
+  filterListWithCount(scopedSites.value).map((w) => {
+    const enriched = enrichWarehouseAffiliation(dataStore.organizations, w)
+    return {
+      ...enriched,
+      assetNatureDisplay:
+        w.assetNature === '省公司自有'
+          ? PROVINCE_COMPANY_FULL_NAME
+          : `租赁${w.leaseUnit ? `（${w.leaseUnit}）` : ''}`,
+    }
+  }),
+)
 const { currentPage, pageSize, total, pageData } = usePagination(tableData, 10)
 
 const exportColumns = [
   { key: 'code', label: '仓室编码' },
   { key: 'name', label: '仓室名称' },
   { key: 'location', label: '仓库地点' },
+  { key: 'cityOrgName', label: '所属地市' },
+  { key: 'countyOrgName', label: '所属县单位' },
+  { key: 'stationOrgName', label: '所属供电所' },
   { key: 'orgName', label: '所属单位' },
-  { key: 'assetNature', label: '资产性质' },
+  { key: 'assetNatureDisplay', label: '资产性质' },
+  { key: 'leaseUnit', label: '租赁单位' },
   { key: 'useStatus', label: '使用状态' },
   { key: 'area', label: '面积(㎡)' },
   { key: 'keeperName', label: '库管人员' },
@@ -145,6 +161,7 @@ const exportData = computed(() =>
     warehouseType: w.warehouseType ?? '',
     remark: w.remark ?? '',
     contactPhone: w.contactPhone ?? '',
+    leaseUnit: w.leaseUnit ?? '',
   })) as Record<string, unknown>[],
 )
 
@@ -153,7 +170,8 @@ const form = reactive({
   name: '',
   location: '',
   orgId: '',
-  assetNature: '自有' as WarehouseSite['assetNature'],
+  assetNature: '省公司自有' as WarehouseSite['assetNature'],
+  leaseUnit: '',
   useStatus: '在用' as WarehouseUseStatus,
   area: 0,
   keeperId: '',
@@ -176,6 +194,15 @@ const rules: FormRules = {
   location: [{ required: true, message: '请输入仓库地点', trigger: 'blur' }],
   orgId: [{ required: true, message: '请选择所属单位', trigger: 'change' }],
   assetNature: [{ required: true, message: '请选择资产性质', trigger: 'change' }],
+  leaseUnit: [
+    {
+      validator: (_r, v, cb) => {
+        if (form.assetNature === '租赁' && !String(v || '').trim()) cb(new Error('租赁仓室请填写租赁单位'))
+        else cb()
+      },
+      trigger: 'blur',
+    },
+  ],
   useStatus: [{ required: true, message: '请选择使用状态', trigger: 'change' }],
   area: [{ required: true, message: '请输入面积', trigger: 'blur' }],
   keeperId: [{ required: true, message: '请选择库管人员', trigger: 'change' }],
@@ -217,6 +244,7 @@ function openDialog(row?: WarehouseSite) {
       location: row.location,
       orgId: row.orgId,
       assetNature: row.assetNature,
+      leaseUnit: row.leaseUnit ?? '',
       useStatus: row.useStatus,
       area: row.area,
       keeperId: row.keeperId,
@@ -231,7 +259,8 @@ function openDialog(row?: WarehouseSite) {
       name: '',
       location: '',
       orgId: orgOptionsForWarehouse.value[0]?.id ?? '',
-      assetNature: '自有',
+      assetNature: '省公司自有',
+      leaseUnit: '',
       useStatus: '在用',
       area: 0,
       keeperId: '',
@@ -253,6 +282,7 @@ async function handleSave() {
     location: form.location,
     orgId: form.orgId,
     assetNature: form.assetNature,
+    leaseUnit: form.assetNature === '租赁' ? form.leaseUnit.trim() : undefined,
     useStatus: form.useStatus,
     area: Number(form.area),
     keeperId: form.keeperId,
@@ -320,8 +350,11 @@ async function handleDelete(row: WarehouseSite) {
         <el-table-column prop="code" label="仓室编码" width="120" fixed="left" />
         <el-table-column prop="name" label="仓室名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="location" label="仓库地点" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="cityOrgName" label="所属地市" width="120" show-overflow-tooltip />
+        <el-table-column prop="countyOrgName" label="所属县单位" width="120" show-overflow-tooltip />
+        <el-table-column prop="stationOrgName" label="所属供电所" width="120" show-overflow-tooltip />
         <el-table-column prop="orgName" label="所属单位" width="130" show-overflow-tooltip />
-        <el-table-column prop="assetNature" label="资产性质" width="90" align="center" />
+        <el-table-column prop="assetNatureDisplay" label="资产性质" min-width="160" show-overflow-tooltip />
         <el-table-column prop="useStatus" label="使用状态" width="100" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="useStatusTagType(row.useStatus)">{{ row.useStatus }}</el-tag>
@@ -408,8 +441,18 @@ async function handleDelete(row: WarehouseSite) {
           <el-col :span="8">
             <el-form-item label="资产性质" prop="assetNature">
               <el-select v-model="form.assetNature" style="width: 100%">
-                <el-option v-for="n in warehouseAssetNatureOptions" :key="n" :label="n" :value="n" />
+                <el-option
+                  v-for="n in warehouseAssetNatureOptions"
+                  :key="n"
+                  :label="n === '省公司自有' ? PROVINCE_COMPANY_FULL_NAME : n"
+                  :value="n"
+                />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.assetNature === '租赁'" :span="8">
+            <el-form-item label="租赁单位" prop="leaseUnit">
+              <el-input v-model="form.leaseUnit" placeholder="租赁方单位名称" />
             </el-form-item>
           </el-col>
           <el-col :span="8">

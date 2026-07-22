@@ -49,19 +49,32 @@ const dispatchVisible = ref(false)
 const dispatchForm = reactive({
   taskName: '',
   centerOrgId: '',
+  startDate: '',
   deadline: '',
   category: 'spare' as AssetCategory | 'all',
+  targetOrgIds: [] as string[],
 })
 
 const centerOrgs = computed(() =>
   dataStore.organizations.filter((o) => isInventoryCenterOrg(o)),
 )
 
+const cascadeTargetOrgs = computed(() => {
+  const center = dataStore.getOrg(dispatchForm.centerOrgId)
+  if (!center) return []
+  const ids = dataStore.getOrgDescendantIdsFrom(center.id, false)
+  return dataStore.organizations.filter(
+    (o) => ids.includes(o.id) && (o.type === 'county' || o.type === 'team'),
+  )
+})
+
 function openDispatch() {
   dispatchForm.taskName = `${new Date().getFullYear()}年盘点计划`
   dispatchForm.centerOrgId = centerOrgs.value.find((o) => o.id === userStore.context.orgId)?.id || centerOrgs.value[0]?.id || ''
+  dispatchForm.startDate = new Date().toISOString().slice(0, 10)
   dispatchForm.deadline = ''
   dispatchForm.category = category.value || 'spare'
+  dispatchForm.targetOrgIds = []
   dispatchVisible.value = true
 }
 
@@ -81,7 +94,9 @@ function doDispatch() {
         taskName: cats.length > 1 ? `${dispatchForm.taskName}（${label}）` : dispatchForm.taskName,
         centerOrgId: dispatchForm.centerOrgId,
         assignee: userStore.displayName,
+        startDate: dispatchForm.startDate || undefined,
         deadline: dispatchForm.deadline || '2026-12-31',
+        targetOrgIds: dispatchForm.targetOrgIds.length ? [...dispatchForm.targetOrgIds] : undefined,
       })
     }
     ElMessage.success(cats.length > 1 ? `已下达 ${cats.length} 类物资盘点计划` : '已按省市县层级下达盘点计划')
@@ -247,9 +262,12 @@ function isOverdue(row: { status: string; deadline: string }) {
 }
 
 const pageDesc = computed(() => {
-  if (action.value === 'plan') return '由省公司或地市公司下达盘点计划，系统按组织树逐级分解至县公司/班组。'
-  if (action.value === 'execute')
+  if (action.value === 'plan') {
+    return '由省公司或地市公司下达盘点计划（地市可级联分解至县公司/供电所），请填写计划开始与截止日期。'
+  }
+  if (action.value === 'execute') {
     return '选择本单位执行任务，通过实物ID扫码或现场拍照登记实盘；有差异明细可过账回写台账并生成流水。'
+  }
   return '汇总各单位盘点完成率、逾期情况与层级进度，支撑督办管控。'
 })
 </script>
@@ -313,6 +331,9 @@ const pageDesc = computed(() => {
           <el-table-column prop="level" label="层级" width="90" />
           <el-table-column prop="assignee" label="负责人" width="100" />
           <el-table-column prop="status" label="状态" width="100" />
+          <el-table-column prop="startDate" label="开始" width="120">
+            <template #default="{ row }">{{ row.startDate || '—' }}</template>
+          </el-table-column>
           <el-table-column prop="deadline" label="截止" width="120" />
           <el-table-column prop="createTime" label="下达时间" width="170" />
           <template #empty><el-empty description="暂无盘点计划" /></template>
@@ -344,6 +365,9 @@ const pageDesc = computed(() => {
               </el-tag>
               <el-tag v-if="isOverdue(row)" size="small" type="danger" style="margin-left: 4px">逾期</el-tag>
             </template>
+          </el-table-column>
+          <el-table-column prop="startDate" label="开始" width="120">
+            <template #default="{ row }">{{ row.startDate || '—' }}</template>
           </el-table-column>
           <el-table-column prop="deadline" label="截止" width="120" />
           <template #empty><el-empty description="暂无进度数据" /></template>
@@ -393,6 +417,18 @@ const pageDesc = computed(() => {
                   </template>
                 </el-table-column>
                 <el-table-column prop="checkMethod" label="方式" width="80" />
+                <el-table-column label="照片" width="70" align="center">
+                  <template #default="{ row }">
+                    <el-image
+                      v-if="row.photoDataUrl"
+                      :src="row.photoDataUrl"
+                      :preview-src-list="[row.photoDataUrl]"
+                      fit="cover"
+                      class="line-photo"
+                    />
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="操作" width="220">
                   <template #default="{ row }">
                     <div v-if="canExecute && !row.adjusted" class="table-actions">
@@ -422,7 +458,9 @@ const pageDesc = computed(() => {
   </PageShell>
 
   <el-dialog v-model="dispatchVisible" title="下达盘点计划" width="480px">
-      <p class="dialog-hint">计划将按组织树向下分解；请确认下达组织为省公司或地市公司。</p>
+      <p class="dialog-hint">
+        计划将按组织树向下分解；省公司下达至地市再至县/供电所，地市公司可直接分解至县公司或供电所。
+      </p>
       <el-form label-width="100px">
         <el-form-item label="计划名称"><el-input v-model="dispatchForm.taskName" /></el-form-item>
         <el-form-item v-if="aggregate || !category" label="物资类别">
@@ -431,9 +469,30 @@ const pageDesc = computed(() => {
           </el-select>
         </el-form-item>
         <el-form-item label="下达组织">
-          <el-select v-model="dispatchForm.centerOrgId" style="width: 100%">
+          <el-select v-model="dispatchForm.centerOrgId" style="width: 100%" @change="dispatchForm.targetOrgIds = []">
             <el-option v-for="o in centerOrgs" :key="o.id" :label="o.name" :value="o.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="直达单位">
+          <el-select
+            v-model="dispatchForm.targetOrgIds"
+            multiple
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="空=全部下级；可多选县/供电所直达"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in cascadeTargetOrgs"
+              :key="o.id"
+              :label="`${o.name}（${o.type === 'team' ? '供电所' : '县公司'}）`"
+              :value="o.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="开始日期">
+          <el-date-picker v-model="dispatchForm.startDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
         <el-form-item label="截止日期">
           <el-date-picker v-model="dispatchForm.deadline" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -477,6 +536,7 @@ const pageDesc = computed(() => {
 .prog-text { margin-left: 8px; font-size: 12px; color: var(--pwms-text-secondary); }
 .muted { color: var(--pwms-text-secondary); font-size: 12px; }
 .photo-preview { display: block; margin-top: 8px; max-width: 100%; max-height: 200px; border-radius: 6px; }
+.line-photo { width: 36px; height: 36px; border-radius: 4px; }
 
 .progress-kpis {
   display: grid;

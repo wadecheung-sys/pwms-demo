@@ -6,8 +6,11 @@ import type {
   AssetCategory,
   AssetLedger,
   AssetLifecycleEvent,
+  CheckCycleSetting,
+  CheckRecord,
   DeviceType,
   FaultRecord,
+  FundingSource,
   InOutRecord,
   InventoryCheckMethod,
   InventoryLineItem,
@@ -21,8 +24,10 @@ import type {
   Person,
   QuotaResult,
   QuotaRule,
+  RetirementRecord,
   Role,
   StockBill,
+  TransferBill,
   WarehouseSite,
 } from '@/types'
 import { genAssetCode, genId, nowStr } from '@/utils/pwms/id'
@@ -35,10 +40,16 @@ import {
   validateOrgHierarchy,
 } from '@/utils/pwms/org'
 import { clearBusinessData, loadJson, saveJson } from '@/utils/pwms/persist'
-import { calcQuotaLimits, calcStandardQty } from '@/utils/pwms/quota'
+import {
+  applyDueFromCycles,
+  refreshLedgersDueAndFlags,
+  resolveNextDueForCheck,
+  syncLedgerOperationalFlags,
+} from '@/utils/pwms/ledgerFlags'
+import { calcStandardQty } from '@/utils/pwms/quota'
 
-/** 业务数据结构版本；v6 补充申请单草稿/驳回示例与撤回 */
-export const BUSINESS_SCHEMA_VERSION = 6
+/** 业务数据结构版本；v10：转仓调拨 + 待办闭环 */
+export const BUSINESS_SCHEMA_VERSION = 11
 
 interface BusinessData {
   schemaVersion: number
@@ -50,6 +61,7 @@ interface BusinessData {
   deviceTypes: DeviceType[]
   ledgers: AssetLedger[]
   stockBills: StockBill[]
+  transferBills: TransferBill[]
   inOutRecords: InOutRecord[]
   faultRecords: FaultRecord[]
   maintenanceRecords: MaintenanceRecord[]
@@ -59,10 +71,18 @@ interface BusinessData {
   orgDeviceParams: OrgDeviceParam[]
   quotaResults: QuotaResult[]
   alerts: AlertItem[]
+  checkRecords: CheckRecord[]
+  retirementRecords: RetirementRecord[]
+  checkCycleSettings: CheckCycleSetting[]
+}
+
+function normalizeFunding(v?: string): FundingSource {
+  if (v === '成本' || v === '零购' || v === '工程转备品') return v
+  return '成本'
 }
 
 function getSeed(): BusinessData {
-  return {
+  const seedData: BusinessData = {
     schemaVersion: BUSINESS_SCHEMA_VERSION,
     organizations: [...seed.organizations],
     roles: [...seed.roles],
@@ -72,6 +92,7 @@ function getSeed(): BusinessData {
     deviceTypes: [...seed.deviceTypes],
     ledgers: [...seed.ledgers],
     stockBills: [...seed.stockBills],
+    transferBills: [...(seed.transferBills || [])],
     inOutRecords: [...seed.inOutRecords],
     faultRecords: [...seed.faultRecords],
     maintenanceRecords: [...seed.maintenanceRecords],
@@ -81,7 +102,12 @@ function getSeed(): BusinessData {
     orgDeviceParams: [...seed.orgDeviceParams],
     quotaResults: [...seed.quotaResults],
     alerts: [...seed.alerts],
+    checkRecords: [...(seed.checkRecords || [])],
+    retirementRecords: [...(seed.retirementRecords || [])],
+    checkCycleSettings: [...(seed.checkCycleSettings || [])],
   }
+  refreshLedgersDueAndFlags(seedData.ledgers, seedData.checkCycleSettings)
+  return seedData
 }
 
 function loadBusinessData(): BusinessData {
@@ -91,7 +117,13 @@ function loadBusinessData(): BusinessData {
   if (!raw.organizations?.length || !raw.organizations[0]?.type) return fallback
   if (!raw.warehouseSites?.length) return fallback
   if (!raw.ledgers?.length || !raw.ledgers[0]?.warehouseId) return fallback
-  return raw as BusinessData
+  const data = raw as BusinessData
+  if (!data.checkRecords) data.checkRecords = [...(seed.checkRecords || [])]
+  if (!data.retirementRecords) data.retirementRecords = [...(seed.retirementRecords || [])]
+  if (!data.checkCycleSettings) data.checkCycleSettings = [...(seed.checkCycleSettings || [])]
+  if (!data.transferBills) data.transferBills = [...(seed.transferBills || [])]
+  refreshLedgersDueAndFlags(data.ledgers, data.checkCycleSettings || [])
+  return data
 }
 
 export const useDataStore = defineStore('data', () => {
@@ -107,6 +139,7 @@ export const useDataStore = defineStore('data', () => {
   const deviceTypes = computed(() => data.value.deviceTypes)
   const ledgers = computed(() => data.value.ledgers)
   const stockBills = computed(() => data.value.stockBills)
+  const transferBills = computed(() => data.value.transferBills || [])
   const inOutRecords = computed(() => data.value.inOutRecords)
   const faultRecords = computed(() => data.value.faultRecords)
   const maintenanceRecords = computed(() => data.value.maintenanceRecords)
@@ -116,6 +149,9 @@ export const useDataStore = defineStore('data', () => {
   const orgDeviceParams = computed(() => data.value.orgDeviceParams)
   const quotaResults = computed(() => data.value.quotaResults)
   const alerts = computed(() => data.value.alerts)
+  const checkRecords = computed(() => data.value.checkRecords || [])
+  const retirementRecords = computed(() => data.value.retirementRecords || [])
+  const checkCycleSettings = computed(() => data.value.checkCycleSettings || [])
 
   function getOrg(id: string) {
     return data.value.organizations.find((o) => o.id === id)
@@ -412,7 +448,11 @@ export const useDataStore = defineStore('data', () => {
       orgName: org.name,
       warehouseName: wh.name,
       unit: dt.unit,
+      inboundTime: item.inboundTime || nowStr(),
     })
+    const created = data.value.ledgers[data.value.ledgers.length - 1]
+    applyDueFromCycles(created, data.value.checkCycleSettings || [])
+    syncLedgerOperationalFlags(created)
   }
 
   function updateLedger(id: string, patch: Partial<AssetLedger>) {
@@ -423,7 +463,7 @@ export const useDataStore = defineStore('data', () => {
     const org = patch.orgId ? getOrg(patch.orgId) : getOrg(cur.orgId)
     const wh = patch.warehouseId ? getWarehouseSite(patch.warehouseId) : getWarehouseSite(cur.warehouseId)
     if (patch.warehouseId && !wh) throw new Error('请选择有效的生产仓地点')
-    data.value.ledgers[idx] = {
+    const next = {
       ...cur,
       ...patch,
       id,
@@ -432,6 +472,9 @@ export const useDataStore = defineStore('data', () => {
       warehouseName: wh?.name ?? cur.warehouseName,
       unit: dt?.unit ?? cur.unit,
     }
+    applyDueFromCycles(next, data.value.checkCycleSettings || [])
+    syncLedgerOperationalFlags(next)
+    data.value.ledgers[idx] = next
   }
 
   function removeLedger(id: string) {
@@ -465,13 +508,16 @@ export const useDataStore = defineStore('data', () => {
         orgName: ledger.orgName,
         reason,
         operateTime: nowStr(),
-        scene: '报废',
+        fundingSource: '成本',
         physicalId: ledger.physicalId,
       })
       ledger.quantity = 0
     }
     ledger.status = '报废'
     ledger.disposeStatus = '已报废'
+    ledger.inStock = false
+    ledger.usable = false
+    syncLedgerOperationalFlags(ledger)
   }
 
   // --- StockBill 审批出入库（确认后才改库存）---
@@ -491,42 +537,41 @@ export const useDataStore = defineStore('data', () => {
   ) {
     const ledger = getLedgerByCode(item.assetCode)
     if (!ledger) throw new Error('资产编码不存在')
-    if (item.billType === '出库' && item.scene === '送检' && ledger.checkDueStatus === '超期') {
+    if (item.billType === '出库' && ledger.checkDueStatus === '超期' && (ledger.category === 'instrument' || ledger.category === 'tool')) {
       pushAlert({
         category: '校验',
         level: '严重',
-        title: `${ledger.name}校验超期禁止出库`,
-        content: `${ledger.assetCode} 校验已超期，出库申请已拦截。`,
+        title: `${ledger.name}检定超期禁止出库`,
+        content: `${ledger.assetCode} 检定已超期，出库申请已拦截。`,
         targetType: 'ledger',
         targetId: ledger.id,
         routePath: `/${ledger.category}/ledger`,
         orgName: ledger.orgName,
       })
-      throw new Error('该仪器仪表校验已超期，禁止出库（请先完成校验）')
+      throw new Error('该物资检定已超期，禁止出库（请先完成检定）')
     }
-    if (item.billType === '出库' && ledger.checkDueStatus === '超期' && ledger.category === 'instrument') {
-      pushAlert({
-        category: '校验',
-        level: '严重',
-        title: `${ledger.name}校验超期禁止出库`,
-        content: `${ledger.assetCode} 校验已超期，出库申请已拦截。`,
-        targetType: 'ledger',
-        targetId: ledger.id,
-        routePath: `/${ledger.category}/ledger`,
-        orgName: ledger.orgName,
-      })
-      throw new Error('该仪器仪表校验已超期，禁止出库')
+    if (item.billType === '出库' && ledger.usable === false) {
+      throw new Error('物资当前不可用，禁止出库')
     }
+    if (item.billType === '出库' && ledger.inStock === false) {
+      throw new Error('物资不在库，无法出库')
+    }
+    const fundingSource = normalizeFunding(
+      item.fundingSource || (item as { scene?: string }).scene,
+    )
     const bill: StockBill = {
       ...item,
+      fundingSource,
       id: genId('sb'),
       billNo: genBillNo(item.billType),
       assetName: ledger.name,
+      model: item.model || ledger.model,
       orgName: item.orgName || ledger.orgName,
       warehouseId: item.warehouseId || ledger.warehouseId,
       warehouseName: item.warehouseName || ledger.warehouseName,
       status: item.status ?? '待审批',
       createTime: nowStr(),
+      inboundTime: item.billType === '入库' ? item.inboundTime || undefined : item.inboundTime,
     }
     data.value.stockBills.unshift(bill)
     return bill.id
@@ -542,7 +587,20 @@ export const useDataStore = defineStore('data', () => {
   function updateStockBill(
     id: string,
     patch: Partial<
-      Pick<StockBill, 'assetCode' | 'quantity' | 'scene' | 'reason' | 'workOrderNo' | 'warehouseId' | 'warehouseName'>
+      Pick<
+        StockBill,
+        | 'assetCode'
+        | 'quantity'
+        | 'fundingSource'
+        | 'reason'
+        | 'workOrderNo'
+        | 'warehouseId'
+        | 'warehouseName'
+        | 'model'
+        | 'projectName'
+        | 'expectedReturnDate'
+        | 'inboundTime'
+      >
     >,
   ) {
     const bill = data.value.stockBills.find((b) => b.id === id)
@@ -555,6 +613,7 @@ export const useDataStore = defineStore('data', () => {
       if (!ledger) throw new Error('资产编码不存在')
       bill.assetCode = ledger.assetCode
       bill.assetName = ledger.name
+      bill.model = ledger.model
       bill.category = ledger.category
       bill.orgId = ledger.orgId
       bill.orgName = ledger.orgName
@@ -562,11 +621,15 @@ export const useDataStore = defineStore('data', () => {
       bill.warehouseName = ledger.warehouseName
     }
     if (patch.quantity != null) bill.quantity = patch.quantity
-    if (patch.scene != null) bill.scene = patch.scene
+    if (patch.fundingSource != null) bill.fundingSource = normalizeFunding(patch.fundingSource)
     if (patch.reason != null) bill.reason = patch.reason
     if (patch.workOrderNo !== undefined) bill.workOrderNo = patch.workOrderNo
     if (patch.warehouseId !== undefined) bill.warehouseId = patch.warehouseId
     if (patch.warehouseName !== undefined) bill.warehouseName = patch.warehouseName
+    if (patch.model !== undefined) bill.model = patch.model
+    if (patch.projectName !== undefined) bill.projectName = patch.projectName
+    if (patch.expectedReturnDate !== undefined) bill.expectedReturnDate = patch.expectedReturnDate
+    if (patch.inboundTime !== undefined) bill.inboundTime = patch.inboundTime
   }
 
   /** 驳回/草稿单据重新提交审批 */
@@ -578,8 +641,8 @@ export const useDataStore = defineStore('data', () => {
     }
     const ledger = getLedgerByCode(bill.assetCode)
     if (!ledger) throw new Error('资产不存在')
-    if (bill.billType === '出库' && ledger.category === 'instrument' && ledger.checkDueStatus === '超期') {
-      throw new Error('该仪器仪表校验已超期，禁止出库')
+    if (bill.billType === '出库' && ledger.checkDueStatus === '超期' && (ledger.category === 'instrument' || ledger.category === 'tool')) {
+      throw new Error('该物资检定已超期，禁止出库')
     }
     bill.status = '待审批'
     bill.rejectReason = undefined
@@ -628,8 +691,8 @@ export const useDataStore = defineStore('data', () => {
     }
     const ledger = getLedgerByCode(bill.assetCode)
     if (!ledger) throw new Error('资产不存在')
-    if (bill.billType === '出库' && ledger.category === 'instrument' && ledger.checkDueStatus === '超期') {
-      throw new Error('仪器校验超期，禁止确认出库')
+    if (bill.billType === '出库' && ledger.checkDueStatus === '超期' && (ledger.category === 'instrument' || ledger.category === 'tool')) {
+      throw new Error('检定超期，禁止确认出库')
     }
     if (!physicalId?.trim()) throw new Error('请扫码或录入实物 ID')
     const expect = ledger.physicalId || ledger.assetCode
@@ -639,8 +702,24 @@ export const useDataStore = defineStore('data', () => {
     if (bill.billType === '出库' && ledger.quantity < bill.quantity) {
       throw new Error(`库存不足，当前库存 ${ledger.quantity} ${ledger.unit}`)
     }
-    if (bill.billType === '入库') ledger.quantity += bill.quantity
-    else ledger.quantity -= bill.quantity
+    if (bill.billType === '入库') {
+      ledger.quantity += bill.quantity
+      ledger.status = '在库'
+      bill.inboundTime = nowStr()
+      ledger.inboundTime = bill.inboundTime
+      applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+      syncLedgerOperationalFlags(ledger)
+    } else {
+      ledger.quantity -= bill.quantity
+      if (ledger.quantity <= 0) {
+        ledger.status = '在用'
+        ledger.quantity = 0
+      }
+      if (bill.expectedReturnDate) ledger.expectedReturnDate = bill.expectedReturnDate
+      if (bill.projectName) ledger.projectName = bill.projectName
+      applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+      syncLedgerOperationalFlags(ledger)
+    }
 
     bill.status = '已确认'
     bill.confirmer = confirmer
@@ -659,9 +738,52 @@ export const useDataStore = defineStore('data', () => {
       reason: bill.reason,
       operateTime: nowStr(),
       billId: bill.id,
-      scene: bill.scene,
+      fundingSource: bill.fundingSource,
       workOrderNo: bill.workOrderNo,
       physicalId: bill.physicalId,
+      projectName: bill.projectName,
+      expectedReturnDate: bill.expectedReturnDate,
+      approver: bill.approver,
+      returned: bill.billType === '出库' ? false : undefined,
+    })
+  }
+
+  /** 仪器/工器具领用归还：出库流水标记已归还，台账回到在库 */
+  function returnOutboundRecord(recordId: string, operator: string) {
+    const record = data.value.inOutRecords.find((r) => r.id === recordId)
+    if (!record) throw new Error('出库记录不存在')
+    if (record.type !== '出库') throw new Error('仅出库记录可归还')
+    if (record.category === 'spare') throw new Error('备品出库不支持归还入库，请走新采购/入库流程')
+    if (record.returned) throw new Error('该出库记录已归还')
+    const ledger = getLedgerByCode(record.assetCode)
+    if (!ledger) throw new Error('台账不存在')
+    if (ledger.status === '报废') throw new Error('已报废物资不可归还')
+
+    ledger.quantity += record.quantity
+    ledger.status = '在库'
+    ledger.inboundTime = nowStr()
+    ledger.expectedReturnDate = undefined
+    applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+    syncLedgerOperationalFlags(ledger)
+
+    record.returned = true
+    record.returnTime = nowStr()
+
+    data.value.inOutRecords.unshift({
+      id: genId('io'),
+      category: record.category,
+      assetCode: record.assetCode,
+      assetName: record.assetName,
+      type: '入库',
+      quantity: record.quantity,
+      operator,
+      orgName: ledger.orgName,
+      reason: `领用归还（关联出库 ${record.id}）`,
+      operateTime: nowStr(),
+      fundingSource: record.fundingSource || '成本',
+      physicalId: ledger.physicalId,
+      billId: record.billId,
+      approver: record.approver,
     })
   }
 
@@ -672,6 +794,143 @@ export const useDataStore = defineStore('data', () => {
     data.value.stockBills = data.value.stockBills.filter((b) => b.id !== id)
   }
 
+  function genTransferNo() {
+    const d = new Date()
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+    const seq = String((data.value.transferBills?.length || 0) + 1).padStart(3, '0')
+    return `ZB${ymd}${seq}`
+  }
+
+  function createTransferBill(
+    item: Omit<TransferBill, 'id' | 'billNo' | 'createTime' | 'status'> & { status?: TransferBill['status'] },
+  ) {
+    if (!data.value.transferBills) data.value.transferBills = []
+    const ledger = getLedgerByCode(item.assetCode)
+    if (!ledger) throw new Error('资产编码不存在')
+    if (ledger.usable === false || ledger.checkDueStatus === '超期' || ledger.trialDueStatus === '超期') {
+      throw new Error('物资超期或不可用，禁止调拨')
+    }
+    if (ledger.quantity < item.quantity) throw new Error(`库存不足，当前 ${ledger.quantity}`)
+    if (item.fromWarehouseId === item.toWarehouseId) throw new Error('调出仓与调入仓不能相同')
+    const bill: TransferBill = {
+      ...item,
+      id: genId('tb'),
+      billNo: genTransferNo(),
+      status: item.status ?? '待审批',
+      createTime: nowStr(),
+    }
+    data.value.transferBills.unshift(bill)
+    return bill.id
+  }
+
+  function approveTransferBill(id: string, approver: string) {
+    const bill = data.value.transferBills.find((b) => b.id === id)
+    if (!bill) throw new Error('调拨单不存在')
+    if (bill.status !== '待审批') throw new Error('当前状态不可审批')
+    bill.status = '待确认'
+    bill.approver = approver
+    bill.approveTime = nowStr()
+  }
+
+  function rejectTransferBill(id: string, approver: string, reason: string) {
+    const bill = data.value.transferBills.find((b) => b.id === id)
+    if (!bill) throw new Error('调拨单不存在')
+    if (bill.status !== '待审批') throw new Error('当前状态不可驳回')
+    bill.status = '已驳回'
+    bill.approver = approver
+    bill.approveTime = nowStr()
+    bill.rejectReason = reason
+  }
+
+  function confirmTransferBill(id: string, confirmer: string, physicalId: string) {
+    const bill = data.value.transferBills.find((b) => b.id === id)
+    if (!bill) throw new Error('调拨单不存在')
+    if (bill.status !== '待确认') throw new Error('当前状态不可确认')
+    const ledger = getLedgerByCode(bill.assetCode)
+    if (!ledger) throw new Error('资产不存在')
+    if (!physicalId?.trim()) throw new Error('请扫码或录入实物 ID')
+    const expect = ledger.physicalId || ledger.assetCode
+    if (physicalId.trim() !== expect && physicalId.trim() !== ledger.assetCode) {
+      throw new Error(`实物 ID 不匹配，期望 ${expect}`)
+    }
+    if (ledger.warehouseId !== bill.fromWarehouseId) {
+      throw new Error('物资当前不在调出仓，无法确认')
+    }
+    if (ledger.quantity < bill.quantity) throw new Error('库存不足，无法调拨')
+
+    const toWh = getWarehouseSite(bill.toWarehouseId)
+    if (!toWh) throw new Error('调入仓不存在')
+
+    // 全量调拨：变更仓室；部分数量则拆分到目标仓台账
+    if (bill.quantity >= ledger.quantity) {
+      ledger.warehouseId = toWh.id
+      ledger.warehouseName = toWh.name
+      ledger.orgId = toWh.orgId
+      ledger.orgName = toWh.orgName
+      ledger.increaseMode = '调拨转入'
+      ledger.inboundTime = nowStr()
+      applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+      syncLedgerOperationalFlags(ledger)
+    } else {
+      ledger.quantity -= bill.quantity
+      applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+      syncLedgerOperationalFlags(ledger)
+      const moved: AssetLedger = {
+        ...ledger,
+        id: genId('l'),
+        quantity: bill.quantity,
+        warehouseId: toWh.id,
+        warehouseName: toWh.name,
+        orgId: toWh.orgId,
+        orgName: toWh.orgName,
+        increaseMode: '调拨转入',
+        inboundTime: nowStr(),
+        status: '在库',
+      }
+      applyDueFromCycles(moved, data.value.checkCycleSettings || [])
+      syncLedgerOperationalFlags(moved)
+      data.value.ledgers.push(moved)
+    }
+
+    bill.status = '已完成'
+    bill.confirmer = confirmer
+    bill.confirmTime = nowStr()
+    bill.physicalId = physicalId.trim()
+
+    data.value.inOutRecords.unshift(
+      {
+        id: genId('io'),
+        category: bill.category,
+        assetCode: bill.assetCode,
+        assetName: bill.assetName,
+        type: '出库',
+        quantity: bill.quantity,
+        operator: confirmer,
+        orgName: bill.orgName,
+        reason: `转仓调出 → ${bill.toWarehouseName}（${bill.billNo}）`,
+        operateTime: nowStr(),
+        fundingSource: '成本',
+        physicalId: bill.physicalId,
+        approver: bill.approver,
+      },
+      {
+        id: genId('io'),
+        category: bill.category,
+        assetCode: bill.assetCode,
+        assetName: bill.assetName,
+        type: '入库',
+        quantity: bill.quantity,
+        operator: confirmer,
+        orgName: toWh.orgName,
+        reason: `转仓调入 ← ${bill.fromWarehouseName}（${bill.billNo}）`,
+        operateTime: nowStr(),
+        fundingSource: '成本',
+        physicalId: bill.physicalId,
+        approver: bill.approver,
+      },
+    )
+  }
+
   /** 兼容历史出入库流水 */
   function addInOutRecord(item: Omit<InOutRecord, 'id' | 'assetName' | 'orgName' | 'operateTime'>) {
     const ledger = getLedgerByCode(item.assetCode)
@@ -679,8 +938,18 @@ export const useDataStore = defineStore('data', () => {
     if (item.type === '出库' && ledger.quantity < item.quantity) {
       throw new Error(`库存不足，当前库存 ${ledger.quantity} ${ledger.unit}`)
     }
-    if (item.type === '入库') ledger.quantity += item.quantity
-    else ledger.quantity -= item.quantity
+    if (item.type === '入库') {
+      ledger.quantity += item.quantity
+      if (ledger.status !== '报废') ledger.status = '在库'
+    } else {
+      ledger.quantity -= item.quantity
+      if (ledger.quantity <= 0) {
+        ledger.quantity = 0
+        if (ledger.status !== '报废') ledger.status = '在用'
+      }
+    }
+    applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+    syncLedgerOperationalFlags(ledger)
 
     data.value.inOutRecords.unshift({
       ...item,
@@ -890,7 +1159,9 @@ export const useDataStore = defineStore('data', () => {
     }
     const ledger = getLedgerByCode(record.assetCode)
     if (ledger && ledger.status === '维修中') {
-      ledger.status = '在用'
+      ledger.status = '在库'
+      applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+      syncLedgerOperationalFlags(ledger)
     }
   }
 
@@ -926,6 +1197,9 @@ export const useDataStore = defineStore('data', () => {
     centerOrgId: string
     assignee: string
     deadline: string
+    startDate?: string
+    /** 市可直达县/所：指定目标组织，空则自动级联全部下级 */
+    targetOrgIds?: string[]
   }) {
     const center = getOrg(params.centerOrgId)
     if (!center || !isInventoryCenterOrg(center)) {
@@ -934,12 +1208,21 @@ export const useDataStore = defineStore('data', () => {
 
     const rootId = genId('inv')
     const created: InventoryTask[] = []
+    const startDate = params.startDate
 
     function leafOrgsUnder(orgId: string): Organization[] {
       const descendants = getOrgDescendantIds(data.value.organizations, orgId, false)
-      return data.value.organizations.filter(
+      let orgs = data.value.organizations.filter(
         (o) => descendants.includes(o.id) && (o.type === 'team' || o.type === 'county'),
       )
+      if (params.targetOrgIds?.length) {
+        const allow = new Set(params.targetOrgIds)
+        orgs = orgs.filter((o) => allow.has(o.id) || params.targetOrgIds!.some((tid) => {
+          const kids = getOrgDescendantIds(data.value.organizations, tid, true)
+          return kids.includes(o.id)
+        }))
+      }
+      return orgs
     }
 
     const rootTask: InventoryTask = {
@@ -952,6 +1235,7 @@ export const useDataStore = defineStore('data', () => {
       totalCount: 0,
       checkedCount: 0,
       status: '待盘点',
+      startDate,
       deadline: params.deadline,
       createTime: nowStr(),
       parentId: null,
@@ -979,6 +1263,7 @@ export const useDataStore = defineStore('data', () => {
         totalCount: 0,
         checkedCount: 0,
         status: '待盘点',
+        startDate,
         deadline: params.deadline,
         createTime: nowStr(),
         parentId: rootId,
@@ -1033,6 +1318,7 @@ export const useDataStore = defineStore('data', () => {
         totalCount,
         checkedCount: 0,
         status: '待盘点',
+        startDate,
         deadline: params.deadline,
         createTime: nowStr(),
         parentId: parentTaskId,
@@ -1100,6 +1386,7 @@ export const useDataStore = defineStore('data', () => {
 
     if (diff > 0) {
       ledger.quantity += diff
+      if (ledger.status !== '报废') ledger.status = '在库'
       data.value.inOutRecords.unshift({
         id: genId('io'),
         category: ledger.category,
@@ -1111,7 +1398,7 @@ export const useDataStore = defineStore('data', () => {
         orgName: ledger.orgName,
         reason: `盘点盘盈（账面 ${line.bookQuantity} → 实盘 ${line.actualQuantity}）`,
         operateTime: nowStr(),
-        scene: '盘盈',
+        fundingSource: '成本',
         physicalId: ledger.physicalId,
       })
     } else {
@@ -1120,6 +1407,10 @@ export const useDataStore = defineStore('data', () => {
         throw new Error(`台账库存不足，无法盘亏出库（当前 ${ledger.quantity}）`)
       }
       ledger.quantity -= outQty
+      if (ledger.quantity <= 0) {
+        ledger.quantity = 0
+        if (ledger.status !== '报废') ledger.status = '在用'
+      }
       data.value.inOutRecords.unshift({
         id: genId('io'),
         category: ledger.category,
@@ -1131,10 +1422,12 @@ export const useDataStore = defineStore('data', () => {
         orgName: ledger.orgName,
         reason: `盘点盘亏（账面 ${line.bookQuantity} → 实盘 ${line.actualQuantity}）`,
         operateTime: nowStr(),
-        scene: '盘亏',
+        fundingSource: '成本',
         physicalId: ledger.physicalId,
       })
     }
+    applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+    syncLedgerOperationalFlags(ledger)
 
     line.adjusted = true
     line.adjustedAt = nowStr()
@@ -1225,17 +1518,18 @@ export const useDataStore = defineStore('data', () => {
       const rule = data.value.quotaRules.find((r) => r.id === param.ruleId)
       if (!rule) continue
       const standardQty = calcStandardQty(rule.formulaType, param.deviceCount, rule)
-      const { upperLimit, lowerLimit } = calcQuotaLimits(standardQty)
-      const actualQty = data.value.ledgers
-        .filter(
-          (l) =>
-            l.category === rule.category &&
-            l.typeName === rule.typeName &&
-            (param.warehouseId ? l.warehouseId === param.warehouseId : l.orgId === param.orgId),
-        )
+      const matched = data.value.ledgers.filter(
+        (l) =>
+          l.category === rule.category &&
+          l.typeName === rule.typeName &&
+          (param.warehouseId ? l.warehouseId === param.warehouseId : l.orgId === param.orgId),
+      )
+      const actualQty = matched.reduce((s, l) => s + l.quantity, 0)
+      const availableQty = matched
+        .filter((l) => l.inStock !== false && l.usable !== false && l.status !== '报废')
         .reduce((s, l) => s + l.quantity, 0)
-      const shortage = Math.max(0, lowerLimit - actualQty)
-      const overage = Math.max(0, actualQty - upperLimit)
+      const shortage = Math.max(0, standardQty - availableQty)
+      const overage = Math.max(0, availableQty - standardQty)
       const res: QuotaResult = {
         id: genId('qres'),
         ruleId: rule.id,
@@ -1249,9 +1543,8 @@ export const useDataStore = defineStore('data', () => {
         formulaType: rule.formulaType,
         deviceCount: param.deviceCount,
         standardQty,
-        upperLimit,
-        lowerLimit,
         actualQty,
+        availableQty,
         shortage,
         overage,
         calculatedAt: nowStr(),
@@ -1261,20 +1554,8 @@ export const useDataStore = defineStore('data', () => {
         pushAlert({
           category: '定额',
           level: '警告',
-          title: `${rule.typeName}储备低于定额下限`,
-          content: `${param.orgName}${param.warehouseName ? '「' + param.warehouseName + '」' : ''}「${rule.typeName}」实库存 ${actualQty}，低于下限 ${lowerLimit}，缺额 ${shortage}，建议补仓。`,
-          targetType: 'quota',
-          targetId: res.id,
-          routePath: '/quota/results',
-          orgName: param.orgName,
-        })
-      }
-      if (overage > 0) {
-        pushAlert({
-          category: '定额',
-          level: '提示',
-          title: `${rule.typeName}储备高于定额上限`,
-          content: `${param.orgName}「${rule.typeName}」实库存 ${actualQty}，高于上限 ${upperLimit}，超额 ${overage}，建议消纳调拨。`,
+          title: `${rule.typeName}可用库存低于标准定额`,
+          content: `${param.orgName}${param.warehouseName ? '「' + param.warehouseName + '」' : ''}「${rule.typeName}」可用 ${availableQty}，标准定额 ${standardQty}，缺额 ${shortage}，建议补仓。`,
           targetType: 'quota',
           targetId: res.id,
           routePath: '/quota/results',
@@ -1284,6 +1565,87 @@ export const useDataStore = defineStore('data', () => {
     }
     data.value.quotaResults = results
     return results
+  }
+
+  function addCheckRecord(item: Omit<CheckRecord, 'id'>) {
+    if (!data.value.checkRecords) data.value.checkRecords = []
+    const ledger = getLedgerByCode(item.assetCode)
+    const nextDueDate = resolveNextDueForCheck(
+      item,
+      ledger?.typeName || '',
+      data.value.checkCycleSettings || [],
+    )
+    const rec: CheckRecord = { ...item, id: genId('chk'), nextDueDate }
+    data.value.checkRecords.unshift(rec)
+    if (ledger) {
+      ledger.lastCheckDate = item.checkDate
+      if (item.result === '不合格') {
+        applyDueFromCycles(ledger, data.value.checkCycleSettings || [], { forceFail: true })
+      } else {
+        applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+      }
+      syncLedgerOperationalFlags(ledger)
+    }
+    return rec.id
+  }
+
+  function refreshAllCheckDueStatuses() {
+    refreshLedgersDueAndFlags(data.value.ledgers, data.value.checkCycleSettings || [])
+  }
+
+  function addRetirementRecord(
+    item: Omit<RetirementRecord, 'id' | 'createTime' | 'status'> & { status?: RetirementRecord['status'] },
+  ) {
+    if (!data.value.retirementRecords) data.value.retirementRecords = []
+    const rec: RetirementRecord = {
+      ...item,
+      id: genId('ret'),
+      status: item.status ?? '待审批',
+      createTime: nowStr(),
+    }
+    data.value.retirementRecords.unshift(rec)
+    return rec.id
+  }
+
+  function approveRetirement(id: string) {
+    const rec = data.value.retirementRecords.find((r) => r.id === id)
+    if (!rec) throw new Error('记录不存在')
+    if (rec.status !== '待审批') throw new Error('当前状态不可审批')
+    rec.status = '已报废'
+    rec.approveTime = nowStr()
+    const ledger = getLedgerByCode(rec.assetCode)
+    if (ledger) {
+      disposeLedger(ledger.id, rec.applicant, rec.reason)
+    }
+  }
+
+  function saveCheckCycleSetting(
+    item: Omit<CheckCycleSetting, 'id'> & { id?: string },
+  ) {
+    if (!data.value.checkCycleSettings) data.value.checkCycleSettings = []
+    if (item.id) {
+      const idx = data.value.checkCycleSettings.findIndex((c) => c.id === item.id)
+      if (idx >= 0) {
+        data.value.checkCycleSettings[idx] = { ...(item as CheckCycleSetting) }
+        refreshAllCheckDueStatuses()
+        return item.id
+      }
+    }
+    const id = item.id || genId('ccs')
+    data.value.checkCycleSettings.unshift({
+      id,
+      category: item.category,
+      typeName: item.typeName,
+      cycleDays: item.cycleDays,
+      checkKind: item.checkKind,
+    })
+    refreshAllCheckDueStatuses()
+    return id
+  }
+
+  function removeCheckCycleSetting(id: string) {
+    data.value.checkCycleSettings = (data.value.checkCycleSettings || []).filter((c) => c.id !== id)
+    refreshAllCheckDueStatuses()
   }
 
   const dashboardStats = computed(() => ({
@@ -1320,6 +1682,7 @@ export const useDataStore = defineStore('data', () => {
     deviceTypes,
     ledgers,
     stockBills,
+    transferBills,
     inOutRecords,
     faultRecords,
     maintenanceRecords,
@@ -1329,6 +1692,9 @@ export const useDataStore = defineStore('data', () => {
     orgDeviceParams,
     quotaResults,
     alerts,
+    checkRecords,
+    retirementRecords,
+    checkCycleSettings,
     dashboardStats,
     getOrg,
     getOrgTree,
@@ -1373,7 +1739,12 @@ export const useDataStore = defineStore('data', () => {
     approveStockBill,
     rejectStockBill,
     confirmStockBill,
+    returnOutboundRecord,
     removeStockBill,
+    createTransferBill,
+    approveTransferBill,
+    rejectTransferBill,
+    confirmTransferBill,
     addInOutRecord,
     removeInOutRecord,
     pushAlert,
@@ -1397,6 +1768,12 @@ export const useDataStore = defineStore('data', () => {
     saveOrgDeviceParam,
     removeOrgDeviceParam,
     calculateAllQuotas,
+    addCheckRecord,
+    refreshAllCheckDueStatuses,
+    addRetirementRecord,
+    approveRetirement,
+    saveCheckCycleSetting,
+    removeCheckCycleSetting,
     resetAllData,
   }
 })

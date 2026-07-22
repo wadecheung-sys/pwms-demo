@@ -6,6 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useDataStore } from '@/stores/data'
 import { useDataScope } from '@/composables/useDataScope'
+import { calcWarehouseAgeDays } from '@/utils/pwms/ledgerFlags'
 import { categoryLabels } from '@/types'
 import PageTip from '@/components/Pwms/PageTip.vue'
 
@@ -15,6 +16,60 @@ const { scopeByOrg } = useDataScope()
 
 const stats = computed(() => dataStore.dashboardStats)
 const openAlerts = computed(() => dataStore.alerts.filter((a) => a.status === '未处理').slice(0, 6))
+
+/** 成熟版管理端「待办」：审批/确认/盘点/退役/转仓 */
+const todoItems = computed(() => {
+  const items: { id: string; title: string; category: string; path: string; time: string }[] = []
+  for (const b of dataStore.stockBills) {
+    if (b.status === '待审批') {
+      items.push({
+        id: b.id,
+        title: `${b.billType}审批 ${b.billNo} · ${b.assetName}`,
+        category: '出入库',
+        path: `/warehouse/inout/${b.billType === '入库' ? 'in' : 'out'}-approve`,
+        time: b.createTime,
+      })
+    } else if (b.status === '待确认') {
+      items.push({
+        id: b.id,
+        title: `${b.billType}确认 ${b.billNo} · ${b.assetName}`,
+        category: '出入库',
+        path: `/warehouse/inout/${b.billType === '入库' ? 'in' : 'out'}-approve`,
+        time: b.approveTime || b.createTime,
+      })
+    }
+  }
+  for (const t of dataStore.transferBills) {
+    if (t.status === '待审批' || t.status === '待确认') {
+      items.push({
+        id: t.id,
+        title: `转仓${t.status === '待审批' ? '审批' : '确认'} ${t.billNo}`,
+        category: '转仓',
+        path: '/warehouse/inout/transfer',
+        time: t.createTime,
+      })
+    }
+  }
+  for (const t of dataStore.inventoryTasks.filter((x) => !x.parentId && x.status !== '已完成')) {
+    items.push({
+      id: t.id,
+      title: `盘点进度 ${t.taskName}`,
+      category: '盘点',
+      path: `/${t.category}/inventory/progress`,
+      time: t.createTime,
+    })
+  }
+  for (const r of dataStore.retirementRecords.filter((x) => x.status === '待审批')) {
+    items.push({
+      id: r.id,
+      title: `退役审批 ${r.assetName}`,
+      category: '退役',
+      path: `/${r.category}/retirement`,
+      time: r.createTime,
+    })
+  }
+  return items.sort((a, b) => (a.time < b.time ? 1 : -1)).slice(0, 8)
+})
 
 const specialtyChartRef = ref<HTMLDivElement | null>(null)
 const ageChartRef = ref<HTMLDivElement | null>(null)
@@ -41,7 +96,7 @@ const ageData = computed(() => {
     { name: '5年以上', value: 0 },
   ]
   for (const l of scopedLedgers.value) {
-    const days = l.warehouseAgeDays ?? 0
+    const days = calcWarehouseAgeDays(l.inboundTime) ?? l.warehouseAgeDays ?? 0
     if (days < 365 * 3) buckets[0].value += l.quantity
     else if (days < 365 * 5) buckets[1].value += l.quantity
     else buckets[2].value += l.quantity
@@ -193,7 +248,7 @@ function renderCharts() {
 function renderMap() {
   if (!mapRef.value) return
   if (!map) {
-    map = L.map(mapRef.value, { zoomControl: true }).setView([41.1, 122.5], 7)
+    map = L.map(mapRef.value, { zoomControl: true }).setView([30.4, 120.6], 8)
     const tileUrl = isDarkMode()
       ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
       : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
@@ -267,14 +322,37 @@ watch(cityBubbles, () => renderMap(), { deep: true })
 
     <div class="quick-links">
       <span class="quick-links__label">常用业务</span>
-      <el-button size="small" @click="router.push('/spare/inout/in-apply')">入库申请</el-button>
-      <el-button size="small" @click="router.push('/spare/inout/out-apply')">出库申请</el-button>
-      <el-button size="small" @click="router.push('/spare/inout/stock-status')">在库状态</el-button>
+      <el-button size="small" @click="router.push('/warehouse/inout/in-apply')">入库申请</el-button>
+      <el-button size="small" @click="router.push('/warehouse/inout/out-apply')">出库申请</el-button>
+      <el-button size="small" @click="router.push('/warehouse/inout/transfer')">转仓调拨</el-button>
+      <el-button size="small" @click="router.push('/warehouse/inout/stock-status')">在库状态</el-button>
       <el-button size="small" @click="router.push('/spare/inventory/plan')">盘点下达</el-button>
       <el-button size="small" @click="router.push('/spare/inventory/progress')">盘点进度</el-button>
       <el-button size="small" @click="router.push('/quota/params')">定额参数</el-button>
       <el-button size="small" @click="router.push('/warehouse/overview')">生产仓概览</el-button>
     </div>
+
+    <el-row :gutter="16" class="todo-row">
+      <el-col :span="24">
+        <div class="panel todo-panel">
+          <div class="panel-head">
+            <span>待办工作台</span>
+            <span class="muted">待办工作台：审批确认、转仓、盘点、退役集中处理（{{ todoItems.length }}）</span>
+          </div>
+          <el-table :data="todoItems" size="small" stripe max-height="220">
+            <el-table-column prop="category" label="分类" width="90" />
+            <el-table-column prop="title" label="待办事项" min-width="240" />
+            <el-table-column prop="time" label="时间" width="160" />
+            <el-table-column label="操作" width="100">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(row.path)">处理</el-button>
+              </template>
+            </el-table-column>
+            <template #empty><el-empty description="暂无待办" :image-size="48" /></template>
+          </el-table>
+        </div>
+      </el-col>
+    </el-row>
 
     <el-row :gutter="16" class="kpi-row">
       <el-col :xs="12" :sm="6">
@@ -420,6 +498,10 @@ watch(cityBubbles, () => renderMap(), { deep: true })
       font-weight: 700;
       color: var(--pwms-primary);
     }
+  }
+
+  .todo-row {
+    margin-bottom: 4px;
   }
 
   .panel {

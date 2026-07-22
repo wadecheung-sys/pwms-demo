@@ -6,8 +6,12 @@ const V = {
   warehouseOverview: () => import('@/views/Pwms/warehouse/WarehouseOverviewView.vue'),
   warehouseLedger: () => import('@/views/Pwms/warehouse/WarehouseLedgerView.vue'),
   stockBill: () => import('@/views/Pwms/inout/StockBillView.vue'),
+  transfer: () => import('@/views/Pwms/warehouse/TransferManageView.vue'),
   ledger: () => import('@/views/Pwms/asset/LedgerManageView.vue'),
   assetModule: () => import('@/views/Pwms/asset/AssetModuleView.vue'),
+  checkRecord: () => import('@/views/Pwms/asset/CheckRecordView.vue'),
+  retirement: () => import('@/views/Pwms/asset/RetirementView.vue'),
+  outboundStats: () => import('@/views/Pwms/asset/OutboundStatsView.vue'),
   inventory: () => import('@/views/Pwms/inventory/InventoryManageView.vue'),
   quota: () => import('@/views/Pwms/quota/QuotaManageView.vue'),
   alerts: () => import('@/views/Pwms/alert/AlertCenterView.vue'),
@@ -16,9 +20,9 @@ const V = {
   deviceType: () => import('@/views/Pwms/device-type/DeviceTypeView.vue'),
   org: () => import('@/views/Pwms/system/OrganizationView.vue'),
   role: () => import('@/views/Pwms/system/RoleView.vue'),
+  checkCycle: () => import('@/views/Pwms/system/CheckCycleView.vue'),
 }
 
-/** 菜单图标（Iconify：vi-ant-design:*） */
 const I = {
   dashboard: 'vi-ant-design:dashboard-outlined',
   warehouse: 'vi-ant-design:home-outlined',
@@ -27,10 +31,8 @@ const I = {
   inout: 'vi-ant-design:swap-outlined',
   inApply: 'vi-ant-design:login-outlined',
   inApprove: 'vi-ant-design:audit-outlined',
-  inConfirm: 'vi-ant-design:check-circle-outlined',
   outApply: 'vi-ant-design:logout-outlined',
   outApprove: 'vi-ant-design:file-done-outlined',
-  outConfirm: 'vi-ant-design:check-square-outlined',
   stock: 'vi-ant-design:database-outlined',
   shortage: 'vi-ant-design:warning-outlined',
   log: 'vi-ant-design:history-outlined',
@@ -47,7 +49,7 @@ const I = {
   rules: 'vi-ant-design:profile-outlined',
   params: 'vi-ant-design:form-outlined',
   results: 'vi-ant-design:fund-outlined',
-  catalog: 'vi-ant-design:book-outlined',
+  catalog: 'vi-ant-design:heat-map-outlined',
   alerts: 'vi-ant-design:bell-outlined',
   personnel: 'vi-ant-design:user-outlined',
   manufacturer: 'vi-ant-design:bank-outlined',
@@ -55,18 +57,23 @@ const I = {
   system: 'vi-ant-design:setting-outlined',
   org: 'vi-ant-design:apartment-outlined',
   role: 'vi-ant-design:safety-certificate-outlined',
+  trial: 'vi-ant-design:safety-outlined',
+  calibration: 'vi-ant-design:experiment-outlined',
+  retirement: 'vi-ant-design:delete-outlined',
+  outboundStats: 'vi-ant-design:bar-chart-outlined',
+  transfer: 'vi-ant-design:swap-outlined',
+  checkCycle: 'vi-ant-design:field-time-outlined',
 } as const
 
 const inoutIcons: Record<string, string> = {
   'in-apply': I.inApply,
   'in-approve': I.inApprove,
-  'in-confirm': I.inConfirm,
   'out-apply': I.outApply,
   'out-approve': I.outApprove,
-  'out-confirm': I.outConfirm,
   'stock-status': I.stock,
   shortage: I.shortage,
   log: I.log,
+  transfer: I.transfer,
 }
 
 const inventoryIcons: Record<string, string> = {
@@ -75,17 +82,17 @@ const inventoryIcons: Record<string, string> = {
   progress: I.progress,
 }
 
+/** 生产仓出入库（审批已合并确认） */
 function inoutChildren(prefix: string, category?: AssetCategory, aggregate?: boolean) {
   const pages: { path: string; title: string; action: InOutPageAction }[] = [
     { path: 'in-apply', title: '入库申请单', action: 'in-apply' },
     { path: 'in-approve', title: '入库审批', action: 'in-approve' },
-    { path: 'in-confirm', title: '入库确认', action: 'in-confirm' },
     { path: 'out-apply', title: '出库申请单', action: 'out-apply' },
     { path: 'out-approve', title: '出库审批', action: 'out-approve' },
-    { path: 'out-confirm', title: '出库确认', action: 'out-confirm' },
     { path: 'stock-status', title: '在库状态', action: 'stock-status' },
     { path: 'shortage', title: '缺额视图', action: 'shortage' },
     { path: 'log', title: '出入库记录', action: 'inout-log' },
+    { path: 'transfer', title: '转仓调拨', action: 'transfer' },
   ]
   return {
     path: 'inout',
@@ -96,7 +103,7 @@ function inoutChildren(prefix: string, category?: AssetCategory, aggregate?: boo
     children: pages.map((p) => ({
       path: p.path,
       name: `${prefix}-inout-${p.path}`,
-      component: V.stockBill,
+      component: p.action === 'transfer' ? V.transfer : V.stockBill,
       meta: {
         title: p.title,
         icon: inoutIcons[p.path] || I.inout,
@@ -135,12 +142,18 @@ function inventoryChildren(prefix: string, category?: AssetCategory, aggregate?:
   }
 }
 
+/** 备品/仪器/工器具：无出入库，含试验/检定、退役、出库统计 */
 function assetCategoryRoutes(
   prefix: string,
   category: AssetCategory,
   title: string,
   icon: string,
 ): AppRouteRecordRaw {
+  const checkPath = category === 'spare' ? 'trial' : 'calibration'
+  const checkTitle = category === 'spare' ? '试验记录' : '检定记录'
+  const checkIcon = category === 'spare' ? I.trial : I.calibration
+  const checkSub = (category === 'spare' ? 'trial' : 'calibration') as SubModule
+
   return {
     path: `/${prefix}`,
     component: Layout,
@@ -154,7 +167,6 @@ function assetCategoryRoutes(
         component: V.ledger,
         meta: { title: '台账管理', icon: I.ledger, category, subModule: 'ledger' as SubModule },
       },
-      inoutChildren(prefix, category),
       {
         path: 'fault',
         name: `${prefix}-fault`,
@@ -172,12 +184,39 @@ function assetCategoryRoutes(
           subModule: 'maintenance' as SubModule,
         },
       },
+      {
+        path: checkPath,
+        name: `${prefix}-${checkPath}`,
+        component: V.checkRecord,
+        meta: { title: checkTitle, icon: checkIcon, category, subModule: checkSub },
+      },
       inventoryChildren(prefix, category),
+      {
+        path: 'retirement',
+        name: `${prefix}-retirement`,
+        component: V.retirement,
+        meta: {
+          title: '退役报废管理',
+          icon: I.retirement,
+          category,
+          subModule: 'retirement' as SubModule,
+        },
+      },
+      {
+        path: 'outbound-stats',
+        name: `${prefix}-outbound-stats`,
+        component: V.outboundStats,
+        meta: {
+          title: '出库统计',
+          icon: I.outboundStats,
+          category,
+          subModule: 'outboundStats' as SubModule,
+        },
+      },
     ],
   } as AppRouteRecordRaw
 }
 
-/** 专业仓业务路由（静态挂载到 admin Layout） */
 export const pwmsAsyncRoutes: AppRouteRecordRaw[] = [
   {
     path: '/dashboard',
@@ -240,7 +279,7 @@ export const pwmsAsyncRoutes: AppRouteRecordRaw[] = [
   {
     path: '/quota',
     component: Layout,
-    redirect: '/quota/rules',
+    redirect: '/quota/results',
     name: 'Quota',
     meta: { title: '定额管理', icon: I.quota },
     children: [
@@ -266,7 +305,7 @@ export const pwmsAsyncRoutes: AppRouteRecordRaw[] = [
         path: 'catalog',
         name: 'quota-catalog',
         component: V.quota,
-        meta: { title: '一仓一策目录', icon: I.catalog, quotaAction: 'catalog' },
+        meta: { title: '省市定额分布', icon: I.catalog, quotaAction: 'catalog' },
       },
     ],
   } as AppRouteRecordRaw,
@@ -372,6 +411,12 @@ export const pwmsAsyncRoutes: AppRouteRecordRaw[] = [
         name: 'system-role',
         component: V.role,
         meta: { title: '角色权限', icon: I.role },
+      },
+      {
+        path: 'check-cycle',
+        name: 'system-check-cycle',
+        component: V.checkCycle,
+        meta: { title: '检定试验周期', icon: I.checkCycle },
       },
     ],
   },

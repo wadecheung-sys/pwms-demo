@@ -1,11 +1,11 @@
-import type { Organization, OrgType } from '@/types'
+import type { Organization, OrgType, WarehouseSite } from '@/types'
 
 export const orgTypeLabels: Record<OrgType, string> = {
-  division: '东北分部',
+  division: '分部',
   province: '省公司',
   city: '地市公司',
   county: '县公司',
-  team: '班组',
+  team: '供电所',
 }
 
 export const orgTypeLevel: Record<OrgType, number> = {
@@ -51,7 +51,7 @@ export function allowedParentTypes(childType: OrgType): OrgType[] | null {
 
 export function validateOrgHierarchy(childType: OrgType, parent: Organization | null): string | null {
   if (childType === 'division') {
-    return parent ? '东北分部必须为顶级组织' : null
+    return parent ? '分部必须为顶级组织' : null
   }
   if (!parent) return '请选择上级组织'
   const allowed = allowedParentTypes(childType)
@@ -116,4 +116,39 @@ export function getValidParentOptions(
   const allowed = allowedParentTypes(childType)
   if (allowed === null) return []
   return orgs.filter((o) => allowed.includes(o.type) && !excludeIds.includes(o.id))
+}
+
+/** 由仓室所属 orgId 推导 地市 / 县 / 供电所 三列展示名 */
+export function resolveOrgAffiliation(
+  orgs: Organization[],
+  orgId: string,
+): { cityOrgName: string; countyOrgName: string; stationOrgName: string } {
+  const chain: Organization[] = []
+  let cur = orgs.find((o) => o.id === orgId)
+  while (cur) {
+    chain.unshift(cur)
+    cur = cur.parentId ? orgs.find((o) => o.id === cur!.parentId) : undefined
+  }
+  const city = chain.find((o) => o.type === 'city')
+  const county = chain.find((o) => o.type === 'county')
+  const station = chain.find((o) => o.type === 'team')
+  return {
+    cityOrgName: city?.name || '—',
+    countyOrgName: county?.name || '—',
+    stationOrgName: station?.name || (county || city ? '—' : chain.at(-1)?.name || '—'),
+  }
+}
+
+export function enrichWarehouseAffiliation(orgs: Organization[], site: WarehouseSite) {
+  return { ...site, ...resolveOrgAffiliation(orgs, site.orgId) }
+}
+
+/** 统计用：仓室挂靠组织层级（市/县/所） */
+export function warehouseOrgTier(orgs: Organization[], orgId: string): 'province' | 'city' | 'county' | 'station' {
+  const org = orgs.find((o) => o.id === orgId)
+  if (!org) return 'station'
+  if (org.type === 'province') return 'province'
+  if (org.type === 'city') return 'city'
+  if (org.type === 'county') return 'county'
+  return 'station'
 }
