@@ -4,6 +4,16 @@
 
 历史版本归档：[`archive/`](./archive/)。本地参考工程：`reference/`（已 gitignore）。
 
+## 在线演示
+
+- 演示地址：https://wadecheung-sys.github.io/pwms-demo/
+- 登录页：https://wadecheung-sys.github.io/pwms-demo/#/login
+- 代码仓库：https://github.com/wadecheung-sys/pwms-demo
+
+默认账号：`admin` / `123456`
+
+> 若国内访问 GitHub Pages 不稳定，可改用后续国内托管链接；本地开发不受影响。
+
 ## 启动
 
 ```bash
@@ -12,7 +22,7 @@ npm install
 npm run dev
 ```
 
-访问开发地址（控制台输出为准，一般为 http://localhost:4000 或 Vite 默认端口）。
+访问开发地址：http://localhost:5177/
 
 默认账号：`admin` / `123456`
 

@@ -31,7 +31,7 @@ jobs:
       - name: Build for GitHub Pages
         run: npm run build:pro
         env:
-          VITE_BASE_PATH: /production-warehouse-management/
+          VITE_BASE_PATH: /pwms-demo/
           VITE_USE_ALL_ELEMENT_PLUS_STYLE: "true"
 
       - name: Deploy to gh-pages branch
