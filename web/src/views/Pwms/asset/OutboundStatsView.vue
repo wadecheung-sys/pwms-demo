@@ -33,6 +33,10 @@ const rows = computed(() => {
     return {
       ...r,
       projectName: r.projectName || bill?.projectName || '—',
+      wbsCode: r.wbsCode || bill?.wbsCode || '—',
+      workOrderType: r.workOrderType || bill?.workOrderType || '—',
+      outboundKind: r.outboundKind || bill?.outboundKind || '常规',
+      makeupStatus: bill?.outboundKind === '抢修' ? bill.status : '',
       approver: r.approver || bill?.approver || '—',
       expectedReturnDate: expected || '—',
       overdue,
@@ -45,8 +49,8 @@ const { currentPage, pageSize, total, pageData } = usePagination(rows, 10)
 
 const tip = computed(() =>
   isSpare.value
-    ? '备品出库统计：领用去向、领用人、审批人、工程。'
-    : '仪器/工器具出库统计：领用、审批、预计归还及是否超期；确认归还后物资回到在库。',
+    ? '备品出库统计：领用去向、领用人、审批人、项目/WBS、常规或抢修。'
+    : '仪器/工器具出库统计：领用、审批、工单、预计归还及是否超期；确认归还后物资回到在库。',
 )
 
 const stats = computed(() => {
@@ -54,7 +58,8 @@ const stats = computed(() => {
   const pending = list.filter((r) => r.canReturn).length
   const overdue = list.filter((r) => r.overdue).length
   const returned = list.filter((r) => r.returned).length
-  return { total: list.length, pending, overdue, returned }
+  const emergency = list.filter((r) => r.outboundKind === '抢修').length
+  return { total: list.length, pending, overdue, returned, emergency }
 })
 
 async function doReturn(row: { id: string; assetName: string }) {
@@ -73,6 +78,7 @@ async function doReturn(row: { id: string; assetName: string }) {
     <PageHeader :title="`${categoryLabels[category]} · 出库统计`">
       <template #actions>
         <el-tag type="info">出库 {{ stats.total }}</el-tag>
+        <el-tag type="warning">抢修 {{ stats.emergency }}</el-tag>
         <el-tag v-if="!isSpare" type="warning">待归还 {{ stats.pending }}</el-tag>
         <el-tag v-if="!isSpare" type="danger">归还超期 {{ stats.overdue }}</el-tag>
         <el-tag v-if="!isSpare" type="success">已归还 {{ stats.returned }}</el-tag>
@@ -86,7 +92,17 @@ async function doReturn(row: { id: string; assetName: string }) {
       <el-table-column prop="orgName" label="领用单位" width="120" />
       <el-table-column prop="operator" label="领用人" width="100" />
       <el-table-column prop="approver" label="审批人" width="100" />
-      <el-table-column v-if="isSpare" prop="projectName" label="使用工程" min-width="140" />
+      <el-table-column prop="outboundKind" label="出库类型" width="90" />
+      <el-table-column prop="workOrderType" label="工单类型" width="100" />
+      <el-table-column prop="workOrderNo" label="工单号" width="140" />
+      <el-table-column prop="projectName" label="项目名称" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="wbsCode" label="WBS" width="120" show-overflow-tooltip />
+      <el-table-column label="抢修补办" width="100">
+        <template #default="{ row }">
+          <span v-if="row.makeupStatus">{{ row.makeupStatus }}</span>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
       <el-table-column v-if="!isSpare" prop="expectedReturnDate" label="预计归还" width="120" />
       <el-table-column v-if="!isSpare" label="归还状态" width="110">
         <template #default="{ row }">
@@ -95,7 +111,6 @@ async function doReturn(row: { id: string; assetName: string }) {
           <el-tag v-else type="warning" size="small">待归还</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="workOrderNo" label="工作票/工单" width="140" />
       <el-table-column prop="reason" label="事由" min-width="120" />
       <el-table-column v-if="!isSpare" label="操作" width="100" fixed="right">
         <template #default="{ row }">

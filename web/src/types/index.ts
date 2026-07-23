@@ -200,6 +200,15 @@ export interface AssetLedger {
   increaseMode?: IncreaseMode
 }
 
+/** 出库业务类型：常规走申请审批；抢修先领用后补办 */
+export type OutboundKind = '常规' | '抢修'
+
+/** 关联工单类型（非工作票） */
+export type WorkOrderType = '大修' | '日常运维' | '抢修'
+
+export const workOrderTypeOptions: WorkOrderType[] = ['大修', '日常运维', '抢修']
+export const outboundKindOptions: OutboundKind[] = ['常规', '抢修']
+
 /** 历史流水（确认单据后生成） */
 export interface InOutRecord {
   id: string
@@ -217,6 +226,9 @@ export interface InOutRecord {
   scene?: string
   fundingSource?: FundingSource
   workOrderNo?: string
+  workOrderType?: WorkOrderType
+  wbsCode?: string
+  outboundKind?: OutboundKind
   physicalId?: string
   projectName?: string
   expectedReturnDate?: string
@@ -236,7 +248,17 @@ export type InboundScene = FundingSource | '采购' | '归还' | '调拨' | '检
 
 export type OutboundScene = FundingSource | '日常领用' | '抢修领用' | '调拨' | '送检' | '盘亏' | '报废'
 
-export type StockBillStatus = '草稿' | '待审批' | '已通过' | '已驳回' | '待确认' | '已确认'
+export type StockBillStatus =
+  | '草稿'
+  | '待审批'
+  | '已通过'
+  | '已驳回'
+  | '待确认'
+  | '已确认'
+  /** 抢修领用后待补办出库手续 */
+  | '待补办'
+  /** 已上传应急抢修审批单，等待补办审批 */
+  | '补办待审'
 
 export interface StockBill {
   id: string
@@ -258,8 +280,18 @@ export interface StockBill {
   orgName: string
   warehouseId?: string
   warehouseName?: string
-  /** 出库工作票/工单号；入库一般不用 */
+  /** 出库关联工单号；入库一般不用 */
   workOrderNo?: string
+  /** 工单类型：大修 / 日常运维 / 抢修 */
+  workOrderType?: WorkOrderType
+  /** WBS 编码（常规大修/日常运维必填；抢修不要求） */
+  wbsCode?: string
+  /** 出库业务类型，默认常规 */
+  outboundKind?: OutboundKind
+  /** 抢修补办截止日期（领用日起 5 个工作日） */
+  makeupDeadline?: string
+  /** 应急抢修审批单（演示存文件名/说明） */
+  emergencyApprovalFile?: string
   reason: string
   physicalId?: string
   approver?: string

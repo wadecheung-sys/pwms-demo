@@ -29,8 +29,10 @@ import type {
   StockBill,
   TransferBill,
   WarehouseSite,
+  OutboundKind,
 } from '@/types'
 import { genAssetCode, genId, nowStr } from '@/utils/pwms/id'
+import { addWorkingDays, todayDateOnly } from '@/utils/pwms/date'
 import {
   buildOrgTree,
   getOrgChildren,
@@ -48,8 +50,8 @@ import {
 } from '@/utils/pwms/ledgerFlags'
 import { calcStandardQty } from '@/utils/pwms/quota'
 
-/** 业务数据结构版本；v10：转仓调拨 + 待办闭环 */
-export const BUSINESS_SCHEMA_VERSION = 11
+/** 业务数据结构版本；v12：工单类型/WBS + 抢修先领用后补办 */
+export const BUSINESS_SCHEMA_VERSION = 12
 
 interface BusinessData {
   schemaVersion: number
@@ -556,12 +558,21 @@ export const useDataStore = defineStore('data', () => {
     if (item.billType === '出库' && ledger.inStock === false) {
       throw new Error('物资不在库，无法出库')
     }
+    const outboundKind: OutboundKind = item.billType === '出库' ? item.outboundKind || '常规' : '常规'
+    if (item.billType === '出库' && outboundKind === '常规') {
+      const wot = item.workOrderType
+      if (!wot || wot === '抢修') throw new Error('常规出库请选择大修或日常运维工单类型')
+      if (!item.projectName?.trim()) throw new Error('常规出库须填写项目名称')
+      if (!item.wbsCode?.trim()) throw new Error('常规出库须填写 WBS 编码')
+      if (!item.workOrderNo?.trim()) throw new Error('常规出库须填写工单号')
+    }
     const fundingSource = normalizeFunding(
       item.fundingSource || (item as { scene?: string }).scene,
     )
     const bill: StockBill = {
       ...item,
       fundingSource,
+      outboundKind: item.billType === '出库' ? outboundKind : undefined,
       id: genId('sb'),
       billNo: genBillNo(item.billType),
       assetName: ledger.name,
@@ -594,19 +605,24 @@ export const useDataStore = defineStore('data', () => {
         | 'fundingSource'
         | 'reason'
         | 'workOrderNo'
+        | 'workOrderType'
+        | 'wbsCode'
+        | 'outboundKind'
         | 'warehouseId'
         | 'warehouseName'
         | 'model'
         | 'projectName'
         | 'expectedReturnDate'
         | 'inboundTime'
+        | 'emergencyApprovalFile'
+        | 'makeupDeadline'
       >
     >,
   ) {
     const bill = data.value.stockBills.find((b) => b.id === id)
     if (!bill) throw new Error('单据不存在')
-    if (!['草稿', '已驳回'].includes(bill.status)) {
-      throw new Error('仅草稿或已驳回单据可修改')
+    if (!['草稿', '已驳回', '待补办'].includes(bill.status)) {
+      throw new Error('仅草稿、已驳回或待补办单据可修改')
     }
     if (patch.assetCode && patch.assetCode !== bill.assetCode) {
       const ledger = getLedgerByCode(patch.assetCode)
@@ -624,12 +640,17 @@ export const useDataStore = defineStore('data', () => {
     if (patch.fundingSource != null) bill.fundingSource = normalizeFunding(patch.fundingSource)
     if (patch.reason != null) bill.reason = patch.reason
     if (patch.workOrderNo !== undefined) bill.workOrderNo = patch.workOrderNo
+    if (patch.workOrderType !== undefined) bill.workOrderType = patch.workOrderType
+    if (patch.wbsCode !== undefined) bill.wbsCode = patch.wbsCode
+    if (patch.outboundKind !== undefined) bill.outboundKind = patch.outboundKind
     if (patch.warehouseId !== undefined) bill.warehouseId = patch.warehouseId
     if (patch.warehouseName !== undefined) bill.warehouseName = patch.warehouseName
     if (patch.model !== undefined) bill.model = patch.model
     if (patch.projectName !== undefined) bill.projectName = patch.projectName
     if (patch.expectedReturnDate !== undefined) bill.expectedReturnDate = patch.expectedReturnDate
     if (patch.inboundTime !== undefined) bill.inboundTime = patch.inboundTime
+    if (patch.emergencyApprovalFile !== undefined) bill.emergencyApprovalFile = patch.emergencyApprovalFile
+    if (patch.makeupDeadline !== undefined) bill.makeupDeadline = patch.makeupDeadline
   }
 
   /** 驳回/草稿单据重新提交审批 */
@@ -740,12 +761,171 @@ export const useDataStore = defineStore('data', () => {
       billId: bill.id,
       fundingSource: bill.fundingSource,
       workOrderNo: bill.workOrderNo,
+      workOrderType: bill.workOrderType,
+      wbsCode: bill.wbsCode,
+      outboundKind: bill.outboundKind,
       physicalId: bill.physicalId,
       projectName: bill.projectName,
       expectedReturnDate: bill.expectedReturnDate,
       approver: bill.approver,
       returned: bill.billType === '出库' ? false : undefined,
     })
+  }
+
+  function assertOutboundAllowed(ledger: AssetLedger) {
+    if (ledger.checkDueStatus === '超期' && (ledger.category === 'instrument' || ledger.category === 'tool')) {
+      throw new Error('该物资检定已超期，禁止出库（请先完成检定）')
+    }
+    if (ledger.usable === false) throw new Error('物资当前不可用，禁止出库')
+    if (ledger.inStock === false) throw new Error('物资不在库，无法出库')
+  }
+
+  function applyOutboundStock(ledger: AssetLedger, bill: StockBill) {
+    if (ledger.quantity < bill.quantity) {
+      throw new Error(`库存不足，当前库存 ${ledger.quantity} ${ledger.unit}`)
+    }
+    ledger.quantity -= bill.quantity
+    if (ledger.quantity <= 0) {
+      ledger.status = '在用'
+      ledger.quantity = 0
+    }
+    if (bill.expectedReturnDate) ledger.expectedReturnDate = bill.expectedReturnDate
+    if (bill.projectName) ledger.projectName = bill.projectName
+    applyDueFromCycles(ledger, data.value.checkCycleSettings || [])
+    syncLedgerOperationalFlags(ledger)
+  }
+
+  /**
+   * 抢修出库：先领用即扣账，生成待补办单据（5 个工作日内补传应急抢修审批单）
+   */
+  function issueEmergencyOutbound(
+    item: Omit<StockBill, 'id' | 'billNo' | 'assetName' | 'createTime' | 'status' | 'billType' | 'outboundKind'> & {
+      physicalId: string
+      orgName?: string
+    },
+  ) {
+    const ledger = getLedgerByCode(item.assetCode)
+    if (!ledger) throw new Error('资产编码不存在')
+    assertOutboundAllowed(ledger)
+    if (!item.physicalId?.trim()) throw new Error('请扫码或录入实物 ID')
+    const expect = ledger.physicalId || ledger.assetCode
+    if (item.physicalId.trim() !== expect && item.physicalId.trim() !== ledger.assetCode) {
+      throw new Error(`实物 ID 不匹配，期望 ${expect}`)
+    }
+
+    const fundingSource = normalizeFunding(item.fundingSource || (item as { scene?: string }).scene)
+    const bill: StockBill = {
+      ...item,
+      fundingSource,
+      billType: '出库',
+      outboundKind: '抢修',
+      workOrderType: item.workOrderType || '抢修',
+      id: genId('sb'),
+      billNo: genBillNo('出库'),
+      assetName: ledger.name,
+      model: item.model || ledger.model,
+      orgName: item.orgName || ledger.orgName,
+      warehouseId: item.warehouseId || ledger.warehouseId,
+      warehouseName: item.warehouseName || ledger.warehouseName,
+      status: '待补办',
+      makeupDeadline: addWorkingDays(todayDateOnly(), 5),
+      physicalId: item.physicalId.trim(),
+      confirmer: item.applicant,
+      confirmTime: nowStr(),
+      createTime: nowStr(),
+    }
+    applyOutboundStock(ledger, bill)
+    data.value.stockBills.unshift(bill)
+    data.value.inOutRecords.unshift({
+      id: genId('io'),
+      category: bill.category,
+      assetCode: bill.assetCode,
+      assetName: bill.assetName,
+      type: '出库',
+      quantity: bill.quantity,
+      operator: bill.applicant,
+      orgName: bill.orgName,
+      reason: bill.reason || '应急抢修领用',
+      operateTime: nowStr(),
+      billId: bill.id,
+      fundingSource: bill.fundingSource,
+      workOrderNo: bill.workOrderNo,
+      workOrderType: bill.workOrderType,
+      wbsCode: bill.wbsCode,
+      outboundKind: '抢修',
+      physicalId: bill.physicalId,
+      projectName: bill.projectName,
+      expectedReturnDate: bill.expectedReturnDate,
+      returned: false,
+    })
+    return bill.id
+  }
+
+  /** 提交抢修补办：须上传应急抢修审批单 */
+  function submitEmergencyMakeup(
+    id: string,
+    payload: { emergencyApprovalFile: string; workOrderNo?: string },
+  ) {
+    const bill = data.value.stockBills.find((b) => b.id === id)
+    if (!bill) throw new Error('单据不存在')
+    if (bill.outboundKind !== '抢修' || bill.status !== '待补办') {
+      throw new Error('仅抢修待补办单据可提交补办')
+    }
+    if (!payload.emergencyApprovalFile?.trim()) {
+      throw new Error('请上传应急抢修审批单（对口专业提供）')
+    }
+    bill.emergencyApprovalFile = payload.emergencyApprovalFile.trim()
+    if (payload.workOrderNo !== undefined) bill.workOrderNo = payload.workOrderNo || undefined
+    bill.status = '补办待审'
+    bill.rejectReason = undefined
+  }
+
+  function approveEmergencyMakeup(id: string, approver: string, remark?: string) {
+    const bill = data.value.stockBills.find((b) => b.id === id)
+    if (!bill) throw new Error('单据不存在')
+    if (bill.status !== '补办待审') throw new Error('当前状态不可审批补办')
+    bill.status = '已确认'
+    bill.approver = approver
+    bill.approveTime = nowStr()
+    bill.approveRemark = remark || '抢修补办手续已审批'
+  }
+
+  function rejectEmergencyMakeup(id: string, approver: string, reason: string) {
+    const bill = data.value.stockBills.find((b) => b.id === id)
+    if (!bill) throw new Error('单据不存在')
+    if (bill.status !== '补办待审') throw new Error('当前状态不可驳回补办')
+    bill.status = '待补办'
+    bill.approver = approver
+    bill.approveTime = nowStr()
+    bill.rejectReason = reason
+    bill.emergencyApprovalFile = undefined
+  }
+
+  /** 扫描抢修补办逾期并写入告警（幂等：同单据未处理告警不重复） */
+  function syncEmergencyMakeupOverdueAlerts() {
+    const today = todayDateOnly()
+    for (const bill of data.value.stockBills) {
+      if (bill.outboundKind !== '抢修' || bill.status !== '待补办') continue
+      if (!bill.makeupDeadline || bill.makeupDeadline >= today) continue
+      const exists = data.value.alerts.some(
+        (a) =>
+          a.targetType === 'bill' &&
+          a.targetId === bill.id &&
+          a.status === '未处理' &&
+          a.title.includes('抢修补办逾期'),
+      )
+      if (exists) continue
+      pushAlert({
+        category: '合规',
+        level: '警告',
+        title: `抢修补办逾期 ${bill.billNo}`,
+        content: `${bill.assetName} 于 ${bill.confirmTime || bill.createTime} 抢修领用，应于 ${bill.makeupDeadline} 前补办出库手续（含应急抢修审批单），现已逾期。`,
+        targetType: 'bill',
+        targetId: bill.id,
+        routePath: '/warehouse/inout/out-apply',
+        orgName: bill.orgName,
+      })
+    }
   }
 
   /** 仪器/工器具领用归还：出库流水标记已归还，台账回到在库 */
@@ -1670,7 +1850,10 @@ export const useDataStore = defineStore('data', () => {
   function resetAllData() {
     clearBusinessData()
     data.value = getSeed()
+    syncEmergencyMakeupOverdueAlerts()
   }
+
+  syncEmergencyMakeupOverdueAlerts()
 
   return {
     data,
@@ -1739,6 +1922,11 @@ export const useDataStore = defineStore('data', () => {
     approveStockBill,
     rejectStockBill,
     confirmStockBill,
+    issueEmergencyOutbound,
+    submitEmergencyMakeup,
+    approveEmergencyMakeup,
+    rejectEmergencyMakeup,
+    syncEmergencyMakeupOverdueAlerts,
     returnOutboundRecord,
     removeStockBill,
     createTransferBill,

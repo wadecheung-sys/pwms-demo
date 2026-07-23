@@ -37,6 +37,22 @@ const todoItems = computed(() => {
         path: `/warehouse/inout/${b.billType === '入库' ? 'in' : 'out'}-approve`,
         time: b.approveTime || b.createTime,
       })
+    } else if (b.status === '待补办') {
+      items.push({
+        id: b.id,
+        title: `抢修补办 ${b.billNo} · ${b.assetName}${b.makeupDeadline ? `（截止 ${b.makeupDeadline}）` : ''}`,
+        category: '抢修',
+        path: '/warehouse/inout/out-apply',
+        time: b.confirmTime || b.createTime,
+      })
+    } else if (b.status === '补办待审') {
+      items.push({
+        id: b.id,
+        title: `抢修补办审批 ${b.billNo} · ${b.assetName}`,
+        category: '抢修',
+        path: '/warehouse/inout/out-approve',
+        time: b.createTime,
+      })
     }
   }
   for (const t of dataStore.transferBills) {

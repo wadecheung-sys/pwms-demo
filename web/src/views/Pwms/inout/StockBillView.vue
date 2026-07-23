@@ -10,8 +10,21 @@ import { useDataScope } from '@/composables/useDataScope'
 import { usePagination } from '@/composables/usePagination'
 import { hasPermission } from '@/utils/pwms/permission'
 import { buildOrgTree, orgTypeLabels } from '@/utils/pwms/org'
-import type { AssetCategory, AssetLedger, FundingSource, InOutPageAction, StockBill } from '@/types'
-import { categoryLabels, fundingSourceOptions } from '@/types'
+import type {
+  AssetCategory,
+  AssetLedger,
+  FundingSource,
+  InOutPageAction,
+  OutboundKind,
+  StockBill,
+  WorkOrderType,
+} from '@/types'
+import {
+  categoryLabels,
+  fundingSourceOptions,
+  outboundKindOptions,
+  workOrderTypeOptions,
+} from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
 import TablePagination from '@/components/Pwms/TablePagination.vue'
@@ -47,10 +60,14 @@ const bills = computed(() => {
     return list.filter((b) => b.billType === '入库' && ['待审批', '待确认'].includes(b.status))
   }
   if (action.value === 'out-apply') {
-    return list.filter((b) => b.billType === '出库' && ['草稿', '待审批', '已驳回'].includes(b.status))
+    return list.filter(
+      (b) => b.billType === '出库' && ['草稿', '待审批', '已驳回', '待补办'].includes(b.status),
+    )
   }
   if (action.value === 'out-approve') {
-    return list.filter((b) => b.billType === '出库' && ['待审批', '待确认'].includes(b.status))
+    return list.filter(
+      (b) => b.billType === '出库' && ['待审批', '待确认', '补办待审'].includes(b.status),
+    )
   }
   return list
 })
@@ -77,20 +94,32 @@ const editingId = ref<string | null>(null)
 const confirmVisible = ref(false)
 const confirmPhysicalId = ref('')
 const currentBill = ref<StockBill | null>(null)
+const makeupVisible = ref(false)
+const makeupFile = ref('')
+const makeupWorkOrderNo = ref('')
+const emergencyPhysicalId = ref('')
 
 const form = reactive({
   assetCode: '',
   quantity: 1,
   fundingSource: '成本' as FundingSource,
   reason: '',
+  outboundKind: '常规' as OutboundKind,
+  workOrderType: '日常运维' as WorkOrderType,
   workOrderNo: '',
   projectName: '',
+  wbsCode: '',
   expectedReturnDate: '',
 })
 
 const isInbound = computed(() => action.value.startsWith('in-'))
 const isApplyPage = computed(() => action.value === 'in-apply' || action.value === 'out-apply')
 const isApprovePage = computed(() => action.value.includes('approve'))
+const isEmergencyForm = computed(() => !isInbound.value && form.outboundKind === '抢修')
+
+const regularWorkOrderTypes = computed(() =>
+  workOrderTypeOptions.filter((t) => t === '大修' || t === '日常运维'),
+)
 
 const showBillOpColumn = computed(() => {
   if (isApplyPage.value) return canApply.value
@@ -118,6 +147,22 @@ function canConfirmBill(row: StockBill) {
   return isApprovePage.value && canConfirm.value && row.status === '待确认'
 }
 
+function canSubmitMakeup(row: StockBill) {
+  return isApplyPage.value && canApply.value && row.outboundKind === '抢修' && row.status === '待补办'
+}
+
+function canApproveMakeup(row: StockBill) {
+  return isApprovePage.value && canApprove.value && row.status === '补办待审'
+}
+
+watch(
+  () => form.outboundKind,
+  (kind) => {
+    if (kind === '抢修') form.workOrderType = '抢修'
+    else if (form.workOrderType === '抢修') form.workOrderType = '日常运维'
+  },
+)
+
 async function doWithdraw(row: StockBill) {
   try {
     await ElMessageBox.confirm(`确定撤回申请单 ${row.billNo}？撤回后可修改再提交。`, '撤回确认', {
@@ -136,9 +181,13 @@ function openCreate() {
   form.quantity = 1
   form.fundingSource = '成本'
   form.reason = ''
+  form.outboundKind = '常规'
+  form.workOrderType = '日常运维'
   form.workOrderNo = ''
   form.projectName = ''
+  form.wbsCode = ''
   form.expectedReturnDate = ''
+  emergencyPhysicalId.value = ''
   dialogVisible.value = true
 }
 
@@ -148,22 +197,67 @@ function openEdit(row: StockBill) {
   form.quantity = row.quantity
   form.fundingSource = (row.fundingSource || row.scene || '成本') as FundingSource
   form.reason = row.reason
+  form.outboundKind = row.outboundKind || '常规'
+  form.workOrderType = row.workOrderType || (form.outboundKind === '抢修' ? '抢修' : '日常运维')
   form.workOrderNo = row.workOrderNo || ''
   form.projectName = row.projectName || ''
+  form.wbsCode = row.wbsCode || ''
   form.expectedReturnDate = row.expectedReturnDate || ''
+  emergencyPhysicalId.value = ''
   dialogVisible.value = true
+}
+
+function validateOutboundForm() {
+  if (isInbound.value) return
+  if (form.outboundKind === '常规') {
+    if (!form.workOrderType || form.workOrderType === '抢修') {
+      throw new Error('常规出库请选择大修或日常运维工单类型')
+    }
+    if (!form.workOrderNo.trim()) throw new Error('请填写工单号')
+    if (!form.projectName.trim()) throw new Error('请填写项目名称')
+    if (!form.wbsCode.trim()) throw new Error('请填写 WBS 编码')
+  }
 }
 
 function submitCreate() {
   try {
     const ledger = dataStore.getLedgerByCode(form.assetCode)
     if (!ledger) throw new Error('请选择物资')
+    validateOutboundForm()
+
+    if (!isInbound.value && form.outboundKind === '抢修') {
+      if (!emergencyPhysicalId.value.trim()) throw new Error('抢修领用请扫码或录入实物 ID')
+      dataStore.issueEmergencyOutbound({
+        category: ledger.category,
+        fundingSource: form.fundingSource,
+        assetCode: form.assetCode,
+        quantity: form.quantity,
+        applicant: userStore.displayName,
+        orgId: ledger.orgId,
+        orgName: ledger.orgName,
+        warehouseId: ledger.warehouseId,
+        warehouseName: ledger.warehouseName,
+        model: ledger.model,
+        reason: form.reason || '应急抢修领用',
+        workOrderNo: form.workOrderNo || undefined,
+        workOrderType: '抢修',
+        physicalId: emergencyPhysicalId.value.trim(),
+        expectedReturnDate: form.expectedReturnDate || undefined,
+      })
+      ElMessage.success('已抢修领用并扣减库存，请在 5 个工作日内补办手续')
+      dialogVisible.value = false
+      return
+    }
+
     const payload = {
       assetCode: form.assetCode,
       quantity: form.quantity,
       fundingSource: form.fundingSource,
       reason: form.reason || form.fundingSource,
       workOrderNo: isInbound.value ? undefined : form.workOrderNo || undefined,
+      workOrderType: isInbound.value ? undefined : form.workOrderType,
+      wbsCode: isInbound.value ? undefined : form.wbsCode || undefined,
+      outboundKind: isInbound.value ? undefined : form.outboundKind,
       model: ledger.model,
       projectName: isInbound.value ? undefined : form.projectName || undefined,
       expectedReturnDate: isInbound.value ? undefined : form.expectedReturnDate || undefined,
@@ -187,6 +281,9 @@ function submitCreate() {
         model: ledger.model,
         reason: form.reason || form.fundingSource,
         workOrderNo: isInbound.value ? undefined : form.workOrderNo || undefined,
+        workOrderType: isInbound.value ? undefined : form.workOrderType,
+        wbsCode: isInbound.value ? undefined : form.wbsCode || undefined,
+        outboundKind: isInbound.value ? undefined : form.outboundKind,
         projectName: isInbound.value ? undefined : form.projectName || undefined,
         expectedReturnDate: isInbound.value ? undefined : form.expectedReturnDate || undefined,
         status: '待审批',
@@ -196,6 +293,46 @@ function submitCreate() {
     dialogVisible.value = false
   } catch (e) {
     ElMessage.error((e as Error).message)
+  }
+}
+
+function openMakeup(row: StockBill) {
+  currentBill.value = row
+  makeupFile.value = row.emergencyApprovalFile || ''
+  makeupWorkOrderNo.value = row.workOrderNo || ''
+  makeupVisible.value = true
+}
+
+function doSubmitMakeup() {
+  if (!currentBill.value) return
+  try {
+    dataStore.submitEmergencyMakeup(currentBill.value.id, {
+      emergencyApprovalFile: makeupFile.value,
+      workOrderNo: makeupWorkOrderNo.value,
+    })
+    ElMessage.success('已提交补办，等待审批')
+    makeupVisible.value = false
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+}
+
+async function doApproveMakeup(row: StockBill) {
+  try {
+    dataStore.approveEmergencyMakeup(row.id, userStore.displayName)
+    ElMessage.success('补办已审批通过')
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+}
+
+async function doRejectMakeup(row: StockBill) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回补办', { inputPlaceholder: '原因' })
+    dataStore.rejectEmergencyMakeup(row.id, userStore.displayName, value || '驳回')
+    ElMessage.success('已驳回，单据回到待补办')
+  } catch {
+    /* cancel */
   }
 }
 
@@ -531,19 +668,26 @@ const { currentPage, pageSize, total, pageData } = usePagination(listSource, 10)
 
 const statusTag = (s: string) => {
   if (s === '已确认') return 'success'
-  if (s === '待审批' || s === '待确认') return 'warning'
+  if (s === '待审批' || s === '待确认' || s === '待补办' || s === '补办待审') return 'warning'
   if (s === '已驳回') return 'danger'
   return 'info'
 }
 
 const dialogTitle = computed(() => {
   if (editingId.value) return isInbound.value ? '修改入库申请' : '修改出库申请'
+  if (isEmergencyForm.value) return '抢修出库（先领用）'
   return isInbound.value ? '新建入库申请' : '新建出库申请'
+})
+
+const submitButtonLabel = computed(() => {
+  if (editingId.value) return '保存并重提'
+  if (isEmergencyForm.value) return '确认领用并扣账'
+  return '提交审批'
 })
 </script>
 
 <template>
-  <PageShell tip="专业仓出入库线上申请—审批—确认；审批通过后同页扫码确认关账，仪器超期禁止出库。">
+  <PageShell tip="生产仓出入库：常规为申请—审批—扫码确认；抢修可先领用扣账，5 个工作日内补传应急抢修审批单并完成补办审批。">
     <PageHeader :title="titleMap[action]">
       <template #actions>
         <el-button v-if="isApplyPage && canApply" type="primary" @click="openCreate">新建申请</el-button>
@@ -629,7 +773,10 @@ const dialogTitle = computed(() => {
         <el-table-column prop="assetName" label="名称" min-width="120" />
         <el-table-column prop="quantity" label="数量" width="80" />
         <el-table-column prop="physicalId" label="实物ID" width="120" />
-        <el-table-column prop="workOrderNo" label="工作票/工单" width="140" />
+        <el-table-column prop="workOrderNo" label="工单号" width="140" />
+        <el-table-column prop="workOrderType" label="工单类型" width="100" />
+        <el-table-column prop="wbsCode" label="WBS" width="120" show-overflow-tooltip />
+        <el-table-column prop="outboundKind" label="出库类型" width="90" />
         <el-table-column prop="operator" label="操作人" width="90" />
         <el-table-column prop="reason" label="事由" min-width="120" />
         <template #empty><el-empty description="暂无出入库记录" /></template>
@@ -640,6 +787,9 @@ const dialogTitle = computed(() => {
     <template v-else>
       <el-table :data="pageData" stripe border>
         <el-table-column prop="billNo" label="单号" width="150" />
+        <el-table-column v-if="!isInbound" label="业务类型" width="90">
+          <template #default="{ row }">{{ row.outboundKind || '常规' }}</template>
+        </el-table-column>
         <el-table-column label="资金来源" width="110">
           <template #default="{ row }">{{ billFundingSource(row) }}</template>
         </el-table-column>
@@ -647,7 +797,11 @@ const dialogTitle = computed(() => {
         <el-table-column v-if="isInbound" prop="model" label="型号" width="100" show-overflow-tooltip />
         <el-table-column prop="quantity" label="数量" width="80" />
         <el-table-column v-if="isInbound" prop="warehouseName" label="存放仓室" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="!isInbound" prop="workOrderNo" label="工作票/工单号" width="140" />
+        <el-table-column v-if="!isInbound" prop="workOrderType" label="工单类型" width="100" />
+        <el-table-column v-if="!isInbound" prop="workOrderNo" label="工单号" width="140" />
+        <el-table-column v-if="!isInbound" prop="projectName" label="项目名称" min-width="120" show-overflow-tooltip />
+        <el-table-column v-if="!isInbound" prop="wbsCode" label="WBS" width="120" show-overflow-tooltip />
+        <el-table-column v-if="!isInbound" prop="makeupDeadline" label="补办截止" width="110" />
         <el-table-column prop="applicant" label="申请人" width="90" />
         <el-table-column v-if="isApprovePage" prop="approver" label="审批人" width="90" />
         <el-table-column v-if="isInbound && isApprovePage" prop="inboundTime" label="入库时间" width="170">
@@ -660,15 +814,22 @@ const dialogTitle = computed(() => {
         </el-table-column>
         <el-table-column prop="rejectReason" label="驳回原因" min-width="120" show-overflow-tooltip />
         <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column v-if="showBillOpColumn" label="操作" width="300" fixed="right">
+        <el-table-column v-if="showBillOpColumn" label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <div v-if="canEditApplyBill(row)" class="table-actions">
               <el-button type="primary" size="small" plain @click="openEdit(row)">修改重提</el-button>
               <el-button type="primary" size="small" plain @click="doResubmit(row)">直接重提</el-button>
               <el-button type="danger" size="small" plain @click="doRemove(row)">删除</el-button>
             </div>
+            <div v-else-if="canSubmitMakeup(row)" class="table-actions">
+              <el-button type="warning" size="small" plain @click="openMakeup(row)">提交补办</el-button>
+            </div>
             <div v-else-if="canWithdrawApplyBill(row)" class="table-actions">
               <el-button type="warning" size="small" plain @click="doWithdraw(row)">撤回</el-button>
+            </div>
+            <div v-else-if="canApproveMakeup(row)" class="table-actions">
+              <el-button type="success" size="small" plain @click="doApproveMakeup(row)">通过补办</el-button>
+              <el-button type="danger" size="small" plain @click="doRejectMakeup(row)">驳回</el-button>
             </div>
             <div v-else-if="canApproveBill(row)" class="table-actions">
               <el-button type="success" size="small" plain @click="doApprove(row)">通过</el-button>
@@ -691,9 +852,17 @@ const dialogTitle = computed(() => {
     />
   </PageShell>
 
-  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
-    <p class="dialog-hint">提交后进入审批；审批通过后在审批页扫码确认关账。</p>
-    <el-form label-width="100px">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
+    <p class="dialog-hint">
+      <template v-if="isEmergencyForm">
+        抢修可先领用并即时扣减在库，须在 5 个工作日内补办手续并上传应急抢修审批单；可不填项目名称与 WBS。
+      </template>
+      <template v-else-if="!isInbound">
+        常规出库须关联大修/日常运维工单，并填写项目名称与 WBS；提交后进入审批，通过后扫码确认关账。
+      </template>
+      <template v-else>提交后进入审批；审批通过后在审批页扫码确认关账。</template>
+    </p>
+    <el-form label-width="110px">
       <el-form-item label="物资">
         <el-select v-model="form.assetCode" filterable style="width: 100%">
           <el-option
@@ -712,11 +881,30 @@ const dialogTitle = computed(() => {
       <el-form-item label="数量">
         <el-input-number v-model="form.quantity" :min="1" />
       </el-form-item>
-      <el-form-item v-if="!isInbound" label="工作票/工单">
-        <el-input v-model="form.workOrderNo" placeholder="出仓联动工单/工作票" />
+      <el-form-item v-if="!isInbound" label="出库业务">
+        <el-radio-group v-model="form.outboundKind" :disabled="Boolean(editingId)">
+          <el-radio v-for="k in outboundKindOptions" :key="k" :value="k">{{ k }}出库</el-radio>
+        </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="!isInbound" label="使用工程">
-        <el-input v-model="form.projectName" placeholder="领用工程/作业名称" />
+      <el-form-item v-if="!isInbound && !isEmergencyForm" label="工单类型" required>
+        <el-select v-model="form.workOrderType" style="width: 100%">
+          <el-option v-for="t in regularWorkOrderTypes" :key="t" :label="`${t}工单`" :value="t" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="!isInbound" :label="isEmergencyForm ? '抢修工单' : '工单号'" :required="!isEmergencyForm">
+        <el-input
+          v-model="form.workOrderNo"
+          :placeholder="isEmergencyForm ? '可关联抢修工单（选填）' : '请填写工单号'"
+        />
+      </el-form-item>
+      <el-form-item v-if="!isInbound && !isEmergencyForm" label="项目名称" required>
+        <el-input v-model="form.projectName" placeholder="大修/日常运维项目名称" />
+      </el-form-item>
+      <el-form-item v-if="!isInbound && !isEmergencyForm" label="WBS编码" required>
+        <el-input v-model="form.wbsCode" placeholder="项目 WBS 编码" />
+      </el-form-item>
+      <el-form-item v-if="isEmergencyForm" label="实物ID" required>
+        <el-input v-model="emergencyPhysicalId" placeholder="扫码或录入实物 ID 后确认领用" />
       </el-form-item>
       <el-form-item v-if="!isInbound" label="预计归还">
         <el-date-picker
@@ -733,7 +921,23 @@ const dialogTitle = computed(() => {
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitCreate">{{ editingId ? '保存并重提' : '提交审批' }}</el-button>
+      <el-button type="primary" @click="submitCreate">{{ submitButtonLabel }}</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="makeupVisible" title="抢修补办手续" width="480px">
+    <p class="dialog-hint">请上传对口专业提供的应急抢修审批单，并确认抢修工单号后提交补办审批。</p>
+    <el-form label-width="120px">
+      <el-form-item label="抢修工单号">
+        <el-input v-model="makeupWorkOrderNo" placeholder="可关联抢修工单（选填）" />
+      </el-form-item>
+      <el-form-item label="应急抢修审批单" required>
+        <el-input v-model="makeupFile" placeholder="演示：填写文件名，如 应急抢修审批单-云溪-0718.pdf" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="makeupVisible = false">取消</el-button>
+      <el-button type="primary" @click="doSubmitMakeup">提交补办</el-button>
     </template>
   </el-dialog>
 

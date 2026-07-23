@@ -123,7 +123,7 @@ export const ledgers: AssetLedger[] = [
   {
     id: 'l-4', category: 'spare', assetCode: 'SP20250001', name: 'XRNT1-10熔断器', typeId: 'dt-7', typeName: '熔断器',
     orgId: 'org-team-yw1', orgName: '云溪运维一所', warehouseId: 'ws-1', warehouseName: '滨江云溪备品仓',
-    manufacturer: '华北机电', model: 'XRNT1-10/50', quantity: 50, unit: '只', status: '在库',
+    manufacturer: '华北机电', model: 'XRNT1-10/50', quantity: 48, unit: '只', status: '在库',
     purchaseDate: '2025-01-10', warrantyDate: '2026-01-10',
     physicalId: 'PID-SP-0001', assetNo: 'ZC-SP-2025-001', specialty: '变电', keeperName: '王仓管',
     assetNature: '省公司自有', disposeStatus: '在库', deviceStatus: '备用', originalValue: 1200,
@@ -224,7 +224,9 @@ export const stockBills: StockBill[] = [
     status: '待确认', assetCode: 'TL20250001', assetName: '扳手工具组', model: 'BS-32', quantity: 1,
     applicant: '刘维修', orgId: 'org-team-jx', orgName: '江城检修供电所',
     warehouseId: 'ws-4', warehouseName: '江城检修供电所工器具室',
-    workOrderNo: 'WO-2026-0712-08', reason: '检修作业领用',
+    outboundKind: '常规', workOrderType: '日常运维', workOrderNo: 'WO-2026-0712-08',
+    projectName: '江城变日常运维', wbsCode: 'WBS-JX-2026-0712',
+    reason: '检修作业领用',
     approver: '张市管', approveTime: '2026-07-12 10:00:00',
     createTime: '2026-07-12 09:10:00',
   },
@@ -233,6 +235,8 @@ export const stockBills: StockBill[] = [
     status: '已驳回', assetCode: 'IN20250001', assetName: '压力表P01', model: 'Y-100', quantity: 1,
     applicant: '赵仓管', orgId: 'org-county-sh', orgName: '江城县公司',
     warehouseId: 'ws-3', warehouseName: '江城综合生产仓', reason: '送检校准',
+    outboundKind: '常规', workOrderType: '大修', workOrderNo: 'WO-2026-0708-01',
+    projectName: '江城变大修', wbsCode: 'WBS-JX-DX-0708',
     rejectReason: '检定已超期，禁止出库，请先完成检定',
     createTime: '2026-07-08 14:00:00',
   },
@@ -244,6 +248,17 @@ export const stockBills: StockBill[] = [
     physicalId: 'PID-SP-0002', approver: '张市管', approveTime: '2026-06-20 11:00:00',
     confirmer: '赵仓管', confirmTime: '2026-06-20 15:30:00', inboundTime: '2026-06-20 15:30:00',
     createTime: '2026-06-20 10:00:00',
+  },
+  {
+    id: 'sb-5', billNo: 'CK20260718006', category: 'spare', billType: '出库', fundingSource: '成本',
+    status: '待补办', assetCode: 'SP20250001', assetName: 'XRNT1-10熔断器', model: 'XRNT1-10/50', quantity: 2,
+    applicant: '王仓管', orgId: 'org-team-yw1', orgName: '云溪运维一所',
+    warehouseId: 'ws-1', warehouseName: '滨江云溪备品仓',
+    outboundKind: '抢修', workOrderType: '抢修', workOrderNo: 'QX-2026-0718-01',
+    reason: '线路故障应急抢修领用',
+    physicalId: 'PID-SP-0001', confirmer: '王仓管', confirmTime: '2026-07-18 08:30:00',
+    makeupDeadline: '2026-07-20',
+    createTime: '2026-07-18 08:30:00',
   },
 ]
 
@@ -270,11 +285,12 @@ export const transferBills: TransferBill[] = [
 
 export const inOutRecords: InOutRecord[] = [
   { id: 'io-1', category: 'spare', assetCode: 'SP20250001', assetName: 'XRNT1-10熔断器', type: '入库', quantity: 30, operator: '王仓管', orgName: '云溪运维一所', reason: '采购入库', operateTime: '2025-01-10 09:30:00', fundingSource: '成本', physicalId: 'PID-SP-0001' },
-  { id: 'io-2', category: 'spare', assetCode: 'SP20250001', assetName: 'XRNT1-10熔断器', type: '出库', quantity: 5, operator: '王仓管', orgName: '云溪运维一所', reason: '设备维修领用', operateTime: '2025-02-15 14:20:00', fundingSource: '成本', workOrderNo: 'WO-2025-0215-01', projectName: '云溪变检修', approver: '张市管' },
-  { id: 'io-3', category: 'tool', assetCode: 'TL20250001', assetName: '扳手工具组', type: '出库', quantity: 2, operator: '赵仓管', orgName: '江城县公司', reason: '现场作业领用', operateTime: '2025-03-01 08:45:00', fundingSource: '成本', expectedReturnDate: '2025-03-08', workOrderNo: 'WO-2025-0301-02', returned: true, returnTime: '2025-03-07 16:00:00' },
-  { id: 'io-5', category: 'instrument', assetCode: 'IN20250001', assetName: '压力表P01', type: '出库', quantity: 1, operator: '赵仓管', orgName: '江城县公司', reason: '现场监测领用', operateTime: '2025-04-01 11:30:00', fundingSource: '成本', expectedReturnDate: '2025-04-10', workOrderNo: 'WO-2025-0401-01', returned: false, approver: '张市管' },
+  { id: 'io-2', category: 'spare', assetCode: 'SP20250001', assetName: 'XRNT1-10熔断器', type: '出库', quantity: 5, operator: '王仓管', orgName: '云溪运维一所', reason: '设备维修领用', operateTime: '2025-02-15 14:20:00', fundingSource: '成本', workOrderNo: 'WO-2025-0215-01', workOrderType: '大修', wbsCode: 'WBS-YX-DX-0215', projectName: '云溪变大修', outboundKind: '常规', approver: '张市管' },
+  { id: 'io-3', category: 'tool', assetCode: 'TL20250001', assetName: '扳手工具组', type: '出库', quantity: 2, operator: '赵仓管', orgName: '江城县公司', reason: '现场作业领用', operateTime: '2025-03-01 08:45:00', fundingSource: '成本', expectedReturnDate: '2025-03-08', workOrderNo: 'WO-2025-0301-02', workOrderType: '日常运维', wbsCode: 'WBS-JC-YW-0301', projectName: '江城运维巡视', outboundKind: '常规', returned: true, returnTime: '2025-03-07 16:00:00' },
+  { id: 'io-5', category: 'instrument', assetCode: 'IN20250001', assetName: '压力表P01', type: '出库', quantity: 1, operator: '赵仓管', orgName: '江城县公司', reason: '现场监测领用', operateTime: '2025-04-01 11:30:00', fundingSource: '成本', expectedReturnDate: '2025-04-10', workOrderNo: 'WO-2025-0401-01', workOrderType: '日常运维', wbsCode: 'WBS-JC-YW-0401', projectName: '江城监测任务', outboundKind: '常规', returned: false, approver: '张市管' },
   { id: 'io-6', category: 'spare', assetCode: 'SP20250002', assetName: 'O型密封圈组', type: '入库', quantity: 50, operator: '赵仓管', orgName: '江城县公司', reason: '工程转备品', operateTime: '2025-05-08 09:15:00', fundingSource: '工程转备品', billId: 'sb-4', approver: '张市管' },
-  { id: 'io-7', category: 'tool', assetCode: 'TL20250002', assetName: '绝缘手套', type: '出库', quantity: 2, operator: '王仓管', orgName: '云溪运维一所', reason: '运维巡视领用', operateTime: '2026-07-10 09:00:00', fundingSource: '成本', expectedReturnDate: '2026-07-05', workOrderNo: 'WO-2026-0710-01', returned: false, approver: '张市管' },
+  { id: 'io-7', category: 'tool', assetCode: 'TL20250002', assetName: '绝缘手套', type: '出库', quantity: 2, operator: '王仓管', orgName: '云溪运维一所', reason: '运维巡视领用', operateTime: '2026-07-10 09:00:00', fundingSource: '成本', expectedReturnDate: '2026-07-05', workOrderNo: 'WO-2026-0710-01', workOrderType: '日常运维', wbsCode: 'WBS-YX-YW-0710', projectName: '云溪运维巡视', outboundKind: '常规', returned: false, approver: '张市管' },
+  { id: 'io-8', category: 'spare', assetCode: 'SP20250001', assetName: 'XRNT1-10熔断器', type: '出库', quantity: 2, operator: '王仓管', orgName: '云溪运维一所', reason: '线路故障应急抢修领用', operateTime: '2026-07-18 08:30:00', fundingSource: '成本', workOrderNo: 'QX-2026-0718-01', workOrderType: '抢修', outboundKind: '抢修', physicalId: 'PID-SP-0001', billId: 'sb-5', returned: false },
 ]
 
 export const faultRecords: FaultRecord[] = [
