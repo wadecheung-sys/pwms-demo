@@ -7,14 +7,19 @@ import { useUserStore } from '@/stores/user'
 import { useDataScope } from '@/composables/useDataScope'
 import { usePagination } from '@/composables/usePagination'
 import { hasPermission } from '@/utils/pwms/permission'
-import type { AssetCategory, AssetLedger } from '@/types'
-import { specialtyOptions, warehouseAssetNatureOptions, increaseModeOptions } from '@/types'
+import type { AssetCategory, AssetLedger, SpecialtyType } from '@/types'
+import {
+  specialtyPathLabel,
+  specialtyTreeOptions,
+  warehouseAssetNatureOptions,
+  increaseModeOptions
+} from '@/types'
 import { calcWarehouseAgeDays } from '@/utils/pwms/ledgerFlags'
 import {
   buildLedgerFilterFields,
   ledgerFilterDefaults,
   matchLedger,
-  type LedgerFilters,
+  type LedgerFilters
 } from '@/views/Pwms/asset/assetFilters'
 import AssetDetailDrawer from '@/components/Pwms/AssetDetailDrawer.vue'
 import FilterBar from '@/components/Pwms/FilterBar.vue'
@@ -45,6 +50,7 @@ function syncFiltersFromRoute() {
   if (q.qualifyStatus) next.qualifyStatus = String(q.qualifyStatus)
   if (q.typeName) next.typeName = String(q.typeName)
   if (q.specialty) next.specialty = String(q.specialty)
+  if (q.isEmergency) next.isEmergency = String(q.isEmergency)
   if (q.keyword) next.keyword = String(q.keyword)
   draft.value = { ...next }
   applied.value = { ...next }
@@ -61,11 +67,12 @@ watch(
       String(route.query.status || ''),
       String(route.query.inStock || ''),
       String(route.query.typeName || ''),
+      String(route.query.isEmergency || '')
     ] as const,
   (_next, prev) => {
     if (!prev) return
     syncFiltersFromRoute()
-  },
+  }
 )
 
 function search() {
@@ -76,21 +83,21 @@ function resetFilters() {
   draft.value = { ...ledgerFilterDefaults }
   applied.value = { ...ledgerFilterDefaults }
   const q = route.query
-  if (q.warehouseId || q.orgId || q.status || q.inStock || q.typeName) {
+  if (q.warehouseId || q.orgId || q.status || q.inStock || q.typeName || q.isEmergency) {
     router.replace({ path: route.path, query: {} })
   }
 }
 
 const baseLedgers = computed(() =>
-  scopeByOrg(dataStore.ledgers.filter((l) => l.category === category.value)),
+  scopeByOrg(dataStore.ledgers.filter((l) => l.category === category.value))
 )
 
 const filterFields = computed(() =>
   buildLedgerFilterFields(
     baseLedgers.value,
     visibleOrganizations.value,
-    scopeWarehouses(dataStore.warehouseSites),
-  ),
+    scopeWarehouses(dataStore.warehouseSites)
+  )
 )
 
 const orgIdSet = computed(() => {
@@ -99,7 +106,7 @@ const orgIdSet = computed(() => {
 })
 
 const rows = computed(() =>
-  baseLedgers.value.filter((l) => matchLedger(l, applied.value, { orgIdSet: orgIdSet.value })),
+  baseLedgers.value.filter((l) => matchLedger(l, applied.value, { orgIdSet: orgIdSet.value }))
 )
 const { currentPage, pageSize, total, pageData } = usePagination(rows, 10)
 const resultCount = computed(() => rows.value.length)
@@ -107,6 +114,7 @@ const resultCount = computed(() => rows.value.length)
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
 const detailCode = ref<string | null>(null)
+const specialtyCascaderProps = { emitPath: false }
 
 const form = reactive({
   name: '',
@@ -121,7 +129,7 @@ const form = reactive({
   warrantyDate: '',
   physicalId: '',
   assetNo: '',
-  specialty: '变电' as AssetLedger['specialty'],
+  specialty: undefined as SpecialtyType | undefined,
   keeperName: '',
   assetNature: '省公司自有' as AssetLedger['assetNature'],
   deviceStatus: '备用' as AssetLedger['deviceStatus'],
@@ -133,22 +141,28 @@ const form = reactive({
   lastCheckDate: '',
   spareSource: '',
   increaseMode: '购置' as NonNullable<AssetLedger['increaseMode']>,
-  remark: '',
+  isEmergency: false,
+  remark: ''
 })
 
 const typeOptions = computed(() => dataStore.deviceTypesByCategory(category.value))
-const orgOptions = computed(() => dataStore.organizations)
-const warehouseOptions = computed(() =>
-  dataStore.warehouseSites.filter((w) => !form.orgId || w.orgId === form.orgId || true),
-)
+const orgOptions = computed(() => visibleOrganizations.value)
+const warehouseOptions = computed(() => {
+  if (!form.orgId) return []
+  return dataStore.warehouseSites.filter((warehouse) =>
+    dataStore.isWarehouseAssignableToOrg(warehouse.id, form.orgId)
+  )
+})
 
 const summary = computed(() => {
   const list = rows.value
   const inStock = list.filter((l) => l.inStock !== false && l.status === '在库').length
   const overdue = list.filter(
-    (l) => l.checkDueStatus === '超期' || l.trialDueStatus === '超期',
+    (l) => l.checkDueStatus === '超期' || l.trialDueStatus === '超期'
   ).length
-  const usable = list.filter((l) => l.usable !== false && l.inStock !== false && l.status === '在库').length
+  const usable = list.filter(
+    (l) => l.usable !== false && l.inStock !== false && l.status === '在库'
+  ).length
   const qty = list.reduce((s, l) => s + l.quantity, 0)
   return { total: list.length, inStock, overdue, usable, qty }
 })
@@ -158,9 +172,11 @@ function ageDays(row: AssetLedger) {
 }
 
 function resetForm() {
+  const defaultTypeId = typeOptions.value[0]?.id ?? ''
+  const defaultSpecialty = dataStore.getDeviceType(defaultTypeId)?.specialty
   Object.assign(form, {
     name: '',
-    typeId: typeOptions.value[0]?.id ?? '',
+    typeId: defaultTypeId,
     orgId: userStore.context.orgId,
     warehouseId: '',
     manufacturer: '',
@@ -171,7 +187,7 @@ function resetForm() {
     warrantyDate: '',
     physicalId: '',
     assetNo: '',
-    specialty: '变电',
+    specialty: defaultSpecialty,
     keeperName: userStore.displayName,
     assetNature: '省公司自有',
     deviceStatus: '备用',
@@ -183,7 +199,8 @@ function resetForm() {
     lastCheckDate: '',
     spareSource: '流动资金购置',
     increaseMode: '购置',
-    remark: '',
+    isEmergency: false,
+    remark: ''
   })
 }
 
@@ -208,7 +225,7 @@ function openEdit(row: AssetLedger) {
     warrantyDate: row.warrantyDate,
     physicalId: row.physicalId ?? '',
     assetNo: row.assetNo ?? '',
-    specialty: row.specialty ?? '综合',
+    specialty: row.specialty ?? dataStore.getDeviceType(row.typeId)?.specialty,
     keeperName: row.keeperName ?? '',
     assetNature: row.assetNature ?? '省公司自有',
     deviceStatus: row.deviceStatus ?? '备用',
@@ -220,7 +237,8 @@ function openEdit(row: AssetLedger) {
     lastCheckDate: row.lastCheckDate ?? '',
     spareSource: row.spareSource ?? '',
     increaseMode: row.increaseMode ?? '购置',
-    remark: row.remark ?? '',
+    isEmergency: row.isEmergency ?? false,
+    remark: row.remark ?? ''
   })
   dialogVisible.value = true
 }
@@ -228,11 +246,17 @@ function openEdit(row: AssetLedger) {
 function save() {
   try {
     if (!form.warehouseId) throw new Error('请选择生产仓地点')
+    if (!form.specialty) throw new Error('请选择标准专业分类')
+    const payload = {
+      ...form,
+      category: category.value,
+      isEmergency: category.value === 'spare' ? form.isEmergency : undefined
+    }
     if (editingId.value) {
-      dataStore.updateLedger(editingId.value, { ...form, category: category.value })
+      dataStore.updateLedger(editingId.value, payload)
       ElMessage.success('已更新')
     } else {
-      dataStore.addLedger({ ...form, category: category.value })
+      dataStore.addLedger(payload)
       ElMessage.success('已新增')
     }
     dialogVisible.value = false
@@ -241,10 +265,22 @@ function save() {
   }
 }
 
+function handleTypeChange(typeId: string) {
+  const specialty = dataStore.getDeviceType(typeId)?.specialty
+  if (specialty) form.specialty = specialty
+}
+
+function handleOrgChange() {
+  if (!form.warehouseId) return
+  if (dataStore.isWarehouseAssignableToOrg(form.warehouseId, form.orgId)) return
+  form.warehouseId = ''
+  ElMessage.info('所属单位已变化，请重新选择同一组织链上的在用仓库')
+}
+
 async function doRemove(row: AssetLedger) {
   try {
     await ElMessageBox.confirm(`确认删除台账「${row.name}」？删除后不可恢复。`, '删除确认', {
-      type: 'warning',
+      type: 'warning'
     })
     dataStore.removeLedger(row.id)
     ElMessage.success('已删除')
@@ -306,211 +342,289 @@ function usableLabel(row: AssetLedger) {
     </el-row>
 
     <el-table :data="pageData" stripe border>
-        <el-table-column prop="assetCode" label="装备编码" width="120" fixed />
-        <el-table-column prop="physicalId" label="实物ID" width="120" />
-        <el-table-column prop="assetNo" label="资产编号" width="120" show-overflow-tooltip />
-        <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column prop="specialty" label="专业" width="80" />
-        <el-table-column prop="typeName" label="类型" width="90" />
-        <el-table-column prop="increaseMode" label="增加方式" width="100" />
-        <el-table-column prop="warehouseName" label="存放地点" min-width="130" />
-        <el-table-column label="仓位" width="120">
-          <template #default="{ row }">
-            {{ [row.storageArea, row.shelfNo, row.binNo].filter(Boolean).join('/') || '—' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="quantity" label="数量" width="70" />
-        <el-table-column label="在库" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="inStockLabel(row) === '在库' ? 'success' : 'info'">
-              {{ inStockLabel(row) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="合格" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="qualifyTagType(row)">{{ qualifyLabel(row) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="可用" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="usableLabel(row) === '可用' ? 'success' : 'warning'">
-              {{ usableLabel(row) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="在库时长" width="90" align="center">
-          <template #default="{ row }">{{ ageDays(row) ?? '—' }}</template>
-        </el-table-column>
-        <el-table-column prop="keeperName" label="保管人" width="90" />
-        <el-table-column label="操作" width="280" fixed="right">
-          <template #default="{ row }">
-            <div class="table-actions">
-              <el-button type="primary" size="small" plain @click="detailCode = row.assetCode">详情</el-button>
-              <el-button v-if="canEdit" type="primary" size="small" plain @click="openEdit(row)">编辑</el-button>
-              <el-button
-                v-if="canEdit && row.status !== '报废' && row.disposeStatus !== '已报废'"
-                type="warning"
-                size="small"
-                plain
-                @click="router.push(`/${category}/retirement`)"
-              >
-                退役
-              </el-button>
-              <el-button v-if="canEdit" type="danger" size="small" plain @click="doRemove(row)">删除</el-button>
-            </div>
-          </template>
-        </el-table-column>
-        <template #empty><el-empty description="暂无台账数据" /></template>
-      </el-table>
-      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
+      <el-table-column prop="assetCode" label="装备编码" width="120" fixed />
+      <el-table-column prop="physicalId" label="实物ID" width="120" />
+      <el-table-column prop="assetNo" label="资产编号" width="120" show-overflow-tooltip />
+      <el-table-column prop="name" label="名称" min-width="120" />
+      <el-table-column label="专业分类" width="150">
+        <template #default="{ row }">{{ specialtyPathLabel(row.specialty) }}</template>
+      </el-table-column>
+      <el-table-column prop="typeName" label="类型" width="90" />
+      <el-table-column prop="increaseMode" label="增加方式" width="100" />
+      <el-table-column v-if="category === 'spare'" label="是否应急" width="90" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.isEmergency ? 'danger' : 'info'">
+            {{ row.isEmergency ? '是' : '否' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="warehouseName" label="存放地点" min-width="130" />
+      <el-table-column label="仓位" width="120">
+        <template #default="{ row }">
+          {{ [row.storageArea, row.shelfNo, row.binNo].filter(Boolean).join('/') || '—' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="quantity" label="数量" width="70" />
+      <el-table-column label="在库" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="inStockLabel(row) === '在库' ? 'success' : 'info'">
+            {{ inStockLabel(row) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="合格" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="qualifyTagType(row)">{{ qualifyLabel(row) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="可用" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="usableLabel(row) === '可用' ? 'success' : 'warning'">
+            {{ usableLabel(row) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="在库时长" width="90" align="center">
+        <template #default="{ row }">{{ ageDays(row) ?? '—' }}</template>
+      </el-table-column>
+      <el-table-column prop="keeperName" label="保管人" width="90" />
+      <el-table-column label="操作" width="280" fixed="right">
+        <template #default="{ row }">
+          <div class="table-actions">
+            <el-button type="primary" size="small" plain @click="detailCode = row.assetCode"
+              >详情</el-button
+            >
+            <el-button v-if="canEdit" type="primary" size="small" plain @click="openEdit(row)"
+              >编辑</el-button
+            >
+            <el-button
+              v-if="canEdit && row.status !== '报废' && row.disposeStatus !== '已报废'"
+              type="warning"
+              size="small"
+              plain
+              @click="router.push(`/${category}/retirement`)"
+            >
+              退役
+            </el-button>
+            <el-button v-if="canEdit" type="danger" size="small" plain @click="doRemove(row)"
+              >删除</el-button
+            >
+          </div>
+        </template>
+      </el-table-column>
+      <template #empty><el-empty description="暂无台账数据" /></template>
+    </el-table>
+    <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
   </PageShell>
 
-  <el-dialog v-model="dialogVisible" :title="editingId ? '编辑台账' : '新增台账'" width="720px" destroy-on-close>
-      <p class="dialog-hint">请完整填写台账基础信息、存放位置与组织归属；仪器类请维护校验相关字段。</p>
-      <el-form label-width="100px" class="ledger-form">
-        <el-divider content-position="left">基础信息</el-divider>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="名称" required>
-              <el-input v-model="form.name" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="类型" required>
-              <el-select v-model="form.typeId" style="width: 100%">
-                <el-option v-for="t in typeOptions" :key="t.id" :label="t.name" :value="t.id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="实物ID">
-              <el-input v-model="form.physicalId" placeholder="一物一码" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="资产编号">
-              <el-input v-model="form.assetNo" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="专业分类">
-              <el-select v-model="form.specialty" style="width: 100%">
-                <el-option v-for="s in specialtyOptions" :key="s" :label="s" :value="s" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="规格型号">
-              <el-input v-model="form.model" />
-            </el-form-item>
-          </el-col>
-        </el-row>
+  <el-dialog
+    v-model="dialogVisible"
+    :title="editingId ? '编辑台账' : '新增台账'"
+    width="720px"
+    destroy-on-close
+  >
+    <p class="dialog-hint"
+      >请完整填写台账基础信息、存放位置与组织归属；仪器类请维护校验相关字段。</p
+    >
+    <el-form label-width="100px" class="ledger-form">
+      <el-divider content-position="left">基础信息</el-divider>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="名称" required>
+            <el-input v-model="form.name" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="类型" required>
+            <el-select v-model="form.typeId" style="width: 100%" @change="handleTypeChange">
+              <el-option v-for="t in typeOptions" :key="t.id" :label="t.name" :value="t.id" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="实物ID">
+            <el-input v-model="form.physicalId" placeholder="一物一码" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="资产编号">
+            <el-input v-model="form.assetNo" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="专业分类">
+            <el-cascader
+              v-model="form.specialty"
+              :options="specialtyTreeOptions"
+              :props="specialtyCascaderProps"
+              clearable
+              style="width: 100%"
+              placeholder="请选择营销、运检或调控专业"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="规格型号">
+            <el-input v-model="form.model" />
+          </el-form-item>
+        </el-col>
+      </el-row>
 
-        <el-divider content-position="left">存放与组织</el-divider>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="所属单位">
-              <el-select v-model="form.orgId" filterable style="width: 100%">
-                <el-option v-for="o in orgOptions" :key="o.id" :label="o.name" :value="o.id" />
+      <el-divider content-position="left">存放与组织</el-divider>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="所属单位">
+            <el-select
+              v-model="form.orgId"
+              filterable
+              style="width: 100%"
+              @change="handleOrgChange"
+            >
+              <el-option v-for="o in orgOptions" :key="o.id" :label="o.name" :value="o.id" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="生产仓地点" required>
+            <div class="field-stack">
+              <el-select
+                v-model="form.warehouseId"
+                filterable
+                :disabled="!form.orgId"
+                :no-data-text="form.orgId ? '当前组织链暂无在用仓库' : '请先选择所属单位'"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="w in warehouseOptions"
+                  :key="w.id"
+                  :label="`${w.name}（${w.orgName}）`"
+                  :value="w.id"
+                >
+                  <div class="warehouse-option">
+                    <span>{{ w.name }}</span>
+                    <small>{{ w.orgName }} · {{ w.location }}</small>
+                  </div>
+                </el-option>
               </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="生产仓地点" required>
-              <el-select v-model="form.warehouseId" filterable style="width: 100%">
-                <el-option v-for="w in warehouseOptions" :key="w.id" :label="w.name" :value="w.id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="库区"><el-input v-model="form.storageArea" /></el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="货架"><el-input v-model="form.shelfNo" /></el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="仓位"><el-input v-model="form.binNo" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="保管人"><el-input v-model="form.keeperName" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="资产性质">
-              <el-select v-model="form.assetNature" style="width: 100%">
-                <el-option v-for="n in warehouseAssetNatureOptions" :key="n" :label="n" :value="n" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+              <span class="field-help">
+                {{
+                  form.orgId
+                    ? `仅显示同一组织链上的在用仓库，共 ${warehouseOptions.length} 个`
+                    : '请先选择所属单位'
+                }}
+              </span>
+            </div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="库区"><el-input v-model="form.storageArea" /></el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="货架"><el-input v-model="form.shelfNo" /></el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="仓位"><el-input v-model="form.binNo" /></el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="保管人"><el-input v-model="form.keeperName" /></el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="资产性质">
+            <el-select v-model="form.assetNature" style="width: 100%">
+              <el-option v-for="n in warehouseAssetNatureOptions" :key="n" :label="n" :value="n" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
 
-        <el-divider content-position="left">状态与数量</el-divider>
-        <el-row :gutter="12">
-          <el-col :span="8">
-            <el-form-item label="数量"><el-input-number v-model="form.quantity" :min="0" /></el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="台账状态">
-              <el-select v-model="form.status" style="width: 100%">
-                <el-option label="在库" value="在库" />
-                <el-option label="在用" value="在用" />
-                <el-option label="维修中" value="维修中" />
-                <el-option label="报废" value="报废" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="设备状态">
-              <el-select v-model="form.deviceStatus" style="width: 100%">
-                <el-option label="在运" value="在运" />
-                <el-option label="备用" value="备用" />
-                <el-option label="检修" value="检修" />
-                <el-option label="停用" value="停用" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="生产厂家"><el-input v-model="form.manufacturer" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电压等级"><el-input v-model="form.voltageLevel" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="category === 'spare' ? '最近试验' : '最近检定'">
-              <el-date-picker v-model="form.lastCheckDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="周期说明">
-              <span class="form-hint">合格/临期/超期由「检定周期设置」+最近日期自动计算</span>
-            </el-form-item>
-          </el-col>
-          <el-col v-if="category === 'spare'" :span="12">
-            <el-form-item label="备品来源"><el-input v-model="form.spareSource" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="增加方式">
-              <el-select v-model="form.increaseMode" style="width: 100%">
-                <el-option v-for="m in increaseModeOptions" :key="m" :label="m" :value="m" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
-      </template>
+      <el-divider content-position="left">状态与数量</el-divider>
+      <el-row :gutter="12">
+        <el-col :span="8">
+          <el-form-item label="数量"
+            ><el-input-number v-model="form.quantity" :min="0"
+          /></el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="台账状态">
+            <el-select v-model="form.status" style="width: 100%">
+              <el-option label="在库" value="在库" />
+              <el-option label="在用" value="在用" />
+              <el-option label="维修中" value="维修中" />
+              <el-option label="报废" value="报废" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="设备状态">
+            <el-select v-model="form.deviceStatus" style="width: 100%">
+              <el-option label="在运" value="在运" />
+              <el-option label="备用" value="备用" />
+              <el-option label="检修" value="检修" />
+              <el-option label="停用" value="停用" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="生产厂家"><el-input v-model="form.manufacturer" /></el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="电压等级"><el-input v-model="form.voltageLevel" /></el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item :label="category === 'spare' ? '最近试验' : '最近检定'">
+            <el-date-picker
+              v-model="form.lastCheckDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="周期说明">
+            <span class="form-hint">合格/临期/超期由「检定周期设置」+最近日期自动计算</span>
+          </el-form-item>
+        </el-col>
+        <el-col v-if="category === 'spare'" :span="12">
+          <el-form-item label="备品来源"><el-input v-model="form.spareSource" /></el-form-item>
+        </el-col>
+        <el-col v-if="category === 'spare'" :span="12">
+          <el-form-item label="是否应急">
+            <el-switch
+              v-model="form.isEmergency"
+              inline-prompt
+              active-text="是"
+              inactive-text="否"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="增加方式">
+            <el-select v-model="form.increaseMode" style="width: 100%">
+              <el-option v-for="m in increaseModeOptions" :key="m" :label="m" :value="m" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="备注"
+            ><el-input v-model="form.remark" type="textarea"
+          /></el-form-item>
+        </el-col>
+      </el-row>
+    </el-form>
+    <template #footer>
+      <el-button @click="dialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="save">保存</el-button>
+    </template>
   </el-dialog>
 
   <AssetDetailDrawer :asset-code="detailCode" @close="detailCode = null" />
 </template>
 
 <style scoped lang="scss">
-.ledger-form :deep(.el-divider) { margin: 8px 0 16px; }
+.ledger-form :deep(.el-divider) {
+  margin: 8px 0 16px;
+}
 .summary-row {
   margin-bottom: 16px;
   padding: 8px 4px 16px;
@@ -520,5 +634,31 @@ function usableLabel(row: AssetLedger) {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 32px;
+}
+.field-stack {
+  width: 100%;
+}
+.field-help {
+  display: block;
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.warehouse-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 34px;
+
+  small {
+    max-width: 280px;
+    overflow: hidden;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 </style>

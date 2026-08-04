@@ -97,14 +97,80 @@ export const warehouseAssetNatureOptions: WarehouseAssetNature[] = ['省公司�
 /** 省公司全称（展示用） */
 export const PROVINCE_COMPANY_FULL_NAME = '国网星海省电力有限公司'
 
-export const warehouseSiteTypeOptions: WarehouseSiteType[] = ['备品仓', '仪器室', '工器具室', '综合仓']
+export const warehouseSiteTypeOptions: WarehouseSiteType[] = [
+  '备品仓',
+  '仪器室',
+  '工器具室',
+  '综合仓'
+]
 
-export type SpecialtyType = '输电' | '变电' | '配电' | '直流' | '通信' | '综合'
+/** 仓库配备的智能化设施类别（不属于仓内物资台账） */
+export type WarehouseSmartDeviceCategory =
+  'RFID设备' | '智能门禁' | '视频监控' | '环境监测' | '智能货架' | '作业终端'
+
+export type WarehouseSmartDeviceStatus = '在用' | '离线' | '故障' | '停用'
+
+export interface WarehouseSmartDevice {
+  id: string
+  code: string
+  name: string
+  category: WarehouseSmartDeviceCategory
+  warehouseId: string
+  warehouseName: string
+  orgId: string
+  orgName: string
+  manufacturer: string
+  model: string
+  quantity: number
+  status: WarehouseSmartDeviceStatus
+  installLocation: string
+  commissioningDate: string
+  lastOnlineTime?: string
+  remark?: string
+}
+
+export const warehouseSmartDeviceCategoryOptions: WarehouseSmartDeviceCategory[] = [
+  'RFID设备',
+  '智能门禁',
+  '视频监控',
+  '环境监测',
+  '智能货架',
+  '作业终端'
+]
+
+export const warehouseSmartDeviceStatusOptions: WarehouseSmartDeviceStatus[] = [
+  '在用',
+  '离线',
+  '故障',
+  '停用'
+]
+
+/** 一级专业域：依据专业仓储备定额测算材料划分 */
+export type SpecialtyDomain = '营销' | '运检' | '调控'
+
+/**
+ * 叶级专业分类。
+ * 营销当前材料未继续拆分；运检下设输电/变电/配电；调控下设二次。
+ */
+export type SpecialtyType = '营销' | '输电' | '变电' | '配电' | '二次'
+
+export interface SpecialtyTreeOption {
+  [key: string]: unknown
+  value: SpecialtyDomain | SpecialtyType
+  label: string
+  children?: SpecialtyTreeOption[]
+}
 
 /** 增加方式（台账「增加方式」） */
 export type IncreaseMode = '购置' | '调拨转入' | '工程转备品' | '盘盈' | '其他'
 
-export const increaseModeOptions: IncreaseMode[] = ['购置', '调拨转入', '工程转备品', '盘盈', '其他']
+export const increaseModeOptions: IncreaseMode[] = [
+  '购置',
+  '调拨转入',
+  '工程转备品',
+  '盘盈',
+  '其他'
+]
 
 export interface Manufacturer {
   id: string
@@ -198,6 +264,8 @@ export interface AssetLedger {
   projectName?: string
   /** 增加方式 */
   increaseMode?: IncreaseMode
+  /** 是否纳入应急物资储备（仅备品备件使用） */
+  isEmergency?: boolean
 }
 
 /** 出库业务类型：常规走申请审批；抢修先领用后补办 */
@@ -244,9 +312,11 @@ export type StockBillType = '入库' | '出库'
 export type FundingSource = '成本' | '零购' | '工程转备品'
 
 /** @deprecated 兼容旧种子，新逻辑用 FundingSource */
-export type InboundScene = FundingSource | '采购' | '归还' | '调拨' | '检修回收' | '物资库转入' | '盘盈'
+export type InboundScene =
+  FundingSource | '采购' | '归还' | '调拨' | '检修回收' | '物资库转入' | '盘盈'
 
-export type OutboundScene = FundingSource | '日常领用' | '抢修领用' | '调拨' | '送检' | '盘亏' | '报废'
+export type OutboundScene =
+  FundingSource | '日常领用' | '抢修领用' | '调拨' | '送检' | '盘亏' | '报废'
 
 export type StockBillStatus =
   | '草稿'
@@ -320,7 +390,8 @@ export interface FaultRecord {
   assetCode: string
   assetName: string
   faultDesc: string
-  faultLevel: '一般' | '严重' | '紧急'
+  /** 故障等级（备品备件不分级，仪器仪表/工器具保留） */
+  faultLevel?: '一般' | '严重' | '紧急'
   reporter: string
   orgName: string
   reportTime: string
@@ -405,11 +476,16 @@ export interface QuotaRule {
   name: string
   category: AssetCategory
   typeName: string
+  /** 适用专业；采用营销/运检/调控标准树的叶级值 */
+  specialty?: SpecialtyType
   formulaType: QuotaFormulaType
-  /** 百台障碍率 / 故障率等 */
+  /** K：百分比字段；生产仓表示供电可靠性，配置原则/调控备品表示故障率 */
   k: number
+  /** a/α：生产仓为差异系数；配置原则为不平均系数 */
   a: number
+  /** T：备品订货周期（月） */
   t?: number
+  /** P：备品健康寿命（年） */
   p?: number
   unit: string
   remark?: string
@@ -422,7 +498,7 @@ export interface OrgDeviceParam {
   warehouseId?: string
   warehouseName?: string
   ruleId: string
-  /** 同类设备件数 A */
+  /** A：随公式变化；生产仓为资产原值（万元），配置原则为同类设备数量 */
   deviceCount: number
   updatedAt: string
 }
@@ -437,8 +513,10 @@ export interface QuotaResult {
   warehouseName?: string
   category: AssetCategory
   typeName: string
+  specialty?: SpecialtyType
   formulaType: QuotaFormulaType
   deviceCount: number
+  /** N：某单位某类设备的储备定额 */
   standardQty: number
   /** @deprecated 甲方要求取消上下限展示，保留字段兼容旧数据 */
   upperLimit?: number
@@ -481,10 +559,56 @@ export interface MenuItem {
 export const categoryLabels: Record<AssetCategory, string> = {
   spare: '备品备件',
   instrument: '仪器仪表',
-  tool: '工器具',
+  tool: '工器具'
 }
 
-export const specialtyOptions: SpecialtyType[] = ['输电', '变电', '配电', '直流', '通信', '综合']
+export const specialtyOptions: SpecialtyType[] = ['营销', '输电', '变电', '配电', '二次']
+
+/** 专业分类标准树，级联选择器以叶级值写入现有 specialty 字段。 */
+export const specialtyTreeOptions: SpecialtyTreeOption[] = [
+  { value: '营销', label: '营销' },
+  {
+    value: '运检',
+    label: '运检',
+    children: [
+      { value: '输电', label: '输电' },
+      { value: '变电', label: '变电' },
+      { value: '配电', label: '配电' }
+    ]
+  },
+  {
+    value: '调控',
+    label: '调控',
+    children: [{ value: '二次', label: '二次' }]
+  }
+]
+
+const specialtyDomainMap: Record<SpecialtyType, SpecialtyDomain> = {
+  营销: '营销',
+  输电: '运检',
+  变电: '运检',
+  配电: '运检',
+  二次: '调控'
+}
+
+/** 旧数据迁移：直流/通信归并调控二次；综合保持未分类，避免无依据归类。 */
+export function normalizeSpecialty(value?: string | null): SpecialtyType | undefined {
+  if (specialtyOptions.includes(value as SpecialtyType)) return value as SpecialtyType
+  if (value === '直流' || value === '通信') return '二次'
+  return undefined
+}
+
+export function specialtyDomainOf(value?: string | null): SpecialtyDomain | undefined {
+  const normalized = normalizeSpecialty(value)
+  return normalized ? specialtyDomainMap[normalized] : undefined
+}
+
+export function specialtyPathLabel(value?: string | null): string {
+  const normalized = normalizeSpecialty(value)
+  if (!normalized) return '待规范'
+  const domain = specialtyDomainMap[normalized]
+  return domain === normalized ? normalized : `${domain} / ${normalized}`
+}
 
 export const subModuleLabels = {
   ledger: '台账管理',
@@ -495,7 +619,7 @@ export const subModuleLabels = {
   trial: '试验记录',
   calibration: '检定记录',
   retirement: '退役报废',
-  outboundStats: '出库统计',
+  outboundStats: '出库统计'
 } as const
 
 export type SubModule = keyof typeof subModuleLabels

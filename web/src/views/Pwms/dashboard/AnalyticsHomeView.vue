@@ -7,7 +7,7 @@ import 'leaflet/dist/leaflet.css'
 import { useDataStore } from '@/stores/data'
 import { useDataScope } from '@/composables/useDataScope'
 import { calcWarehouseAgeDays } from '@/utils/pwms/ledgerFlags'
-import { categoryLabels } from '@/types'
+import { categoryLabels, specialtyDomainOf } from '@/types'
 import PageTip from '@/components/Pwms/PageTip.vue'
 
 const dataStore = useDataStore()
@@ -27,7 +27,7 @@ const todoItems = computed(() => {
         title: `${b.billType}审批 ${b.billNo} · ${b.assetName}`,
         category: '出入库',
         path: `/warehouse/inout/${b.billType === '入库' ? 'in' : 'out'}-approve`,
-        time: b.createTime,
+        time: b.createTime
       })
     } else if (b.status === '待确认') {
       items.push({
@@ -35,7 +35,7 @@ const todoItems = computed(() => {
         title: `${b.billType}确认 ${b.billNo} · ${b.assetName}`,
         category: '出入库',
         path: `/warehouse/inout/${b.billType === '入库' ? 'in' : 'out'}-approve`,
-        time: b.approveTime || b.createTime,
+        time: b.approveTime || b.createTime
       })
     } else if (b.status === '待补办') {
       items.push({
@@ -43,7 +43,7 @@ const todoItems = computed(() => {
         title: `抢修补办 ${b.billNo} · ${b.assetName}${b.makeupDeadline ? `（截止 ${b.makeupDeadline}）` : ''}`,
         category: '抢修',
         path: '/warehouse/inout/out-apply',
-        time: b.confirmTime || b.createTime,
+        time: b.confirmTime || b.createTime
       })
     } else if (b.status === '补办待审') {
       items.push({
@@ -51,7 +51,7 @@ const todoItems = computed(() => {
         title: `抢修补办审批 ${b.billNo} · ${b.assetName}`,
         category: '抢修',
         path: '/warehouse/inout/out-approve',
-        time: b.createTime,
+        time: b.createTime
       })
     }
   }
@@ -62,7 +62,7 @@ const todoItems = computed(() => {
         title: `转仓${t.status === '待审批' ? '审批' : '确认'} ${t.billNo}`,
         category: '转仓',
         path: '/warehouse/inout/transfer',
-        time: t.createTime,
+        time: t.createTime
       })
     }
   }
@@ -72,7 +72,7 @@ const todoItems = computed(() => {
       title: `盘点进度 ${t.taskName}`,
       category: '盘点',
       path: `/${t.category}/inventory/progress`,
-      time: t.createTime,
+      time: t.createTime
     })
   }
   for (const r of dataStore.retirementRecords.filter((x) => x.status === '待审批')) {
@@ -81,7 +81,7 @@ const todoItems = computed(() => {
       title: `退役审批 ${r.assetName}`,
       category: '退役',
       path: `/${r.category}/retirement`,
-      time: r.createTime,
+      time: r.createTime
     })
   }
   return items.sort((a, b) => (a.time < b.time ? 1 : -1)).slice(0, 8)
@@ -99,7 +99,7 @@ const scopedLedgers = computed(() => scopeByOrg([...dataStore.ledgers]))
 const specialtyData = computed(() => {
   const mapCount: Record<string, number> = {}
   for (const l of scopedLedgers.value) {
-    const s = l.specialty || '综合'
+    const s = specialtyDomainOf(l.specialty) || '待规范'
     mapCount[s] = (mapCount[s] || 0) + l.quantity
   }
   return Object.entries(mapCount).map(([name, value]) => ({ name, value }))
@@ -109,7 +109,7 @@ const ageData = computed(() => {
   const buckets = [
     { name: '0-3年', value: 0 },
     { name: '3-5年', value: 0 },
-    { name: '5年以上', value: 0 },
+    { name: '5年以上', value: 0 }
   ]
   for (const l of scopedLedgers.value) {
     const days = calcWarehouseAgeDays(l.inboundTime) ?? l.warehouseAgeDays ?? 0
@@ -123,7 +123,15 @@ const ageData = computed(() => {
 const cityBubbles = computed(() => {
   const byCity: Record<
     string,
-    { name: string; orgId: string; spare: number; instrument: number; tool: number; lat: number; lng: number }
+    {
+      name: string
+      orgId: string
+      spare: number
+      instrument: number
+      tool: number
+      lat: number
+      lng: number
+    }
   > = {}
   for (const w of dataStore.warehouseSites) {
     if (w.lat == null || w.lng == null) continue
@@ -146,7 +154,7 @@ const cityBubbles = computed(() => {
         instrument: 0,
         tool: 0,
         lat: w.lat,
-        lng: w.lng,
+        lng: w.lng
       }
     }
   }
@@ -169,7 +177,7 @@ const cityBubbles = computed(() => {
         instrument: 0,
         tool: 0,
         lat: wh.lat,
-        lng: wh.lng,
+        lng: wh.lng
       }
     }
     byCity[cityName][l.category] += l.quantity
@@ -192,29 +200,27 @@ function chartTooltipStyle() {
     return {
       backgroundColor: '#262727',
       borderColor: '#303030',
-      textStyle: { color: 'rgba(255,255,255,0.85)' },
+      textStyle: { color: 'rgba(255,255,255,0.85)' }
     }
   }
   return {
     backgroundColor: '#ffffff',
     borderColor: '#e4e7ed',
-    textStyle: { color: '#303133' },
+    textStyle: { color: '#303133' }
   }
 }
 
 function renderCharts() {
   if (specialtyChartRef.value) {
     specialtyChart ??= echarts.init(specialtyChartRef.value, undefined, { renderer: 'canvas' })
-    const data = specialtyData.value.length
-      ? specialtyData.value
-      : [{ name: '暂无数据', value: 0 }]
+    const data = specialtyData.value.length ? specialtyData.value : [{ name: '暂无数据', value: 0 }]
     const labelColor = isDarkMode() ? 'rgba(255,255,255,0.55)' : '#606266'
     specialtyChart.setOption({
       color: chartColors,
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'item',
-        ...chartTooltipStyle(),
+        ...chartTooltipStyle()
       },
       series: [
         {
@@ -223,11 +229,11 @@ function renderCharts() {
           data,
           label: {
             formatter: '{b}\n{c}',
-            color: labelColor,
+            color: labelColor
           },
-          emptyCircleStyle: { color: isDarkMode() ? '#303030' : '#e4e7ed' },
-        },
-      ],
+          emptyCircleStyle: { color: isDarkMode() ? '#303030' : '#e4e7ed' }
+        }
+      ]
     })
   }
   if (ageChartRef.value) {
@@ -241,22 +247,22 @@ function renderCharts() {
         type: 'category',
         data: ageData.value.map((d) => d.name),
         axisLabel: { color: labelColor },
-        axisLine: { lineStyle: { color: axisColor } },
+        axisLine: { lineStyle: { color: axisColor } }
       },
       yAxis: {
         type: 'value',
         axisLabel: { color: labelColor },
-        splitLine: { lineStyle: { color: axisColor, type: 'dashed' } },
+        splitLine: { lineStyle: { color: axisColor, type: 'dashed' } }
       },
       series: [
         {
           type: 'bar',
           data: ageData.value.map((d) => d.value),
           itemStyle: { color: '#409eff', borderRadius: [4, 4, 0, 0] },
-          barMaxWidth: 36,
-        },
+          barMaxWidth: 36
+        }
       ],
-      grid: { left: 40, right: 16, top: 24, bottom: 32 },
+      grid: { left: 40, right: 16, top: 24, bottom: 32 }
     })
   }
 }
@@ -271,7 +277,7 @@ function renderMap() {
     L.tileLayer(tileUrl, {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
       maxZoom: 18,
-      subdomains: 'abcd',
+      subdomains: 'abcd'
     }).addTo(map)
   }
   map.eachLayer((layer) => {
@@ -286,10 +292,10 @@ function renderMap() {
       color: '#409eff',
       fillColor: '#69b1ff',
       fillOpacity: 0.75,
-      weight: 2,
+      weight: 2
     })
     marker.bindPopup(
-      `<div style="color:#1f1f1f"><b>${c.name}</b><br/>备品 ${c.spare}<br/>仪器 ${c.instrument}<br/>工器具 ${c.tool}<br/><small>点击气泡进入台账</small></div>`,
+      `<div style="color:#1f1f1f"><b>${c.name}</b><br/>备品 ${c.spare}<br/>仪器 ${c.instrument}<br/>工器具 ${c.tool}<br/><small>点击气泡进入台账</small></div>`
     )
     marker.on('click', () => goCityLedger(c.orgId))
     marker.addTo(map!)
@@ -331,17 +337,25 @@ watch(cityBubbles, () => renderMap(), { deep: true })
         <h2>经营分析 · 全省一张图</h2>
       </div>
       <div class="hero-actions">
-        <el-button type="primary" @click="router.push('/alerts')">告警中心（{{ stats.openAlerts }}）</el-button>
-        <el-button @click="router.push('/quota/results')">定额缺额（{{ stats.shortageCount }}）</el-button>
+        <el-button type="primary" @click="router.push('/alerts')"
+          >告警中心（{{ stats.openAlerts }}）</el-button
+        >
+        <el-button @click="router.push('/quota/results')"
+          >定额缺额（{{ stats.shortageCount }}）</el-button
+        >
       </div>
     </div>
 
     <div class="quick-links">
       <span class="quick-links__label">常用业务</span>
       <el-button size="small" @click="router.push('/warehouse/inout/in-apply')">入库申请</el-button>
-      <el-button size="small" @click="router.push('/warehouse/inout/out-apply')">出库申请</el-button>
+      <el-button size="small" @click="router.push('/warehouse/inout/out-apply')"
+        >出库申请</el-button
+      >
       <el-button size="small" @click="router.push('/warehouse/inout/transfer')">转仓调拨</el-button>
-      <el-button size="small" @click="router.push('/warehouse/inout/stock-status')">在库状态</el-button>
+      <el-button size="small" @click="router.push('/warehouse/inout/stock-status')"
+        >在库状态</el-button
+      >
       <el-button size="small" @click="router.push('/spare/inventory/plan')">盘点下达</el-button>
       <el-button size="small" @click="router.push('/spare/inventory/progress')">盘点进度</el-button>
       <el-button size="small" @click="router.push('/quota/params')">定额参数</el-button>
@@ -353,7 +367,9 @@ watch(cityBubbles, () => renderMap(), { deep: true })
         <div class="panel todo-panel">
           <div class="panel-head">
             <span>待办工作台</span>
-            <span class="muted">待办工作台：审批确认、转仓、盘点、退役集中处理（{{ todoItems.length }}）</span>
+            <span class="muted"
+              >待办工作台：审批确认、转仓、盘点、退役集中处理（{{ todoItems.length }}）</span
+            >
           </div>
           <el-table :data="todoItems" size="small" stripe max-height="220">
             <el-table-column prop="category" label="分类" width="90" />
@@ -414,8 +430,16 @@ watch(cityBubbles, () => renderMap(), { deep: true })
             <el-button link type="primary" @click="router.push('/alerts')">全部</el-button>
           </div>
           <div v-if="!openAlerts.length" class="empty-tip">暂无未处理告警</div>
-          <div v-for="a in openAlerts" :key="a.id" class="alert-item" @click="a.routePath && router.push(a.routePath)">
-            <el-tag size="small" :type="a.level === '严重' ? 'danger' : a.level === '警告' ? 'warning' : 'info'">
+          <div
+            v-for="a in openAlerts"
+            :key="a.id"
+            class="alert-item"
+            @click="a.routePath && router.push(a.routePath)"
+          >
+            <el-tag
+              size="small"
+              :type="a.level === '严重' ? 'danger' : a.level === '警告' ? 'warning' : 'info'"
+            >
               {{ a.category }}
             </el-tag>
             <div class="alert-body">
@@ -430,7 +454,7 @@ watch(cityBubbles, () => renderMap(), { deep: true })
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :xs="24" :md="12">
         <div class="panel">
-          <div class="panel-head">专业分布</div>
+          <div class="panel-head">一级专业分布</div>
           <div ref="specialtyChartRef" class="chart-box" />
         </div>
       </el-col>
@@ -497,7 +521,9 @@ watch(cityBubbles, () => renderMap(), { deep: true })
     margin-bottom: 12px;
     cursor: pointer;
     border: 1px solid var(--pwms-border);
-    transition: border-color var(--pwms-transition), background var(--pwms-transition);
+    transition:
+      border-color var(--pwms-transition),
+      background var(--pwms-transition);
 
     &:hover {
       border-color: var(--pwms-primary);

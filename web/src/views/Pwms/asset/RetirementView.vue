@@ -11,6 +11,7 @@ import { categoryLabels } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
 import TablePagination from '@/components/Pwms/TablePagination.vue'
+import AssetPicker from '@/components/Pwms/AssetPicker.vue'
 
 const route = useRoute()
 const dataStore = useDataStore()
@@ -91,14 +92,7 @@ function approve(id: string) {
     <el-dialog v-model="dialog" title="申请退役报废" width="440px">
       <el-form label-width="80px">
         <el-form-item label="资产">
-          <el-select v-model="form.assetCode" filterable style="width: 100%">
-            <el-option
-              v-for="l in ledgers"
-              :key="l.assetCode"
-              :label="`${l.assetCode} ${l.name}`"
-              :value="l.assetCode"
-            />
-          </el-select>
+          <AssetPicker v-model="form.assetCode" :options="ledgers" />
         </el-form-item>
         <el-form-item label="原因">
           <el-input v-model="form.reason" type="textarea" />

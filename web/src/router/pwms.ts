@@ -5,9 +5,11 @@ const V = {
   analytics: () => import('@/views/Pwms/dashboard/AnalyticsHomeView.vue'),
   warehouseOverview: () => import('@/views/Pwms/warehouse/WarehouseOverviewView.vue'),
   warehouseLedger: () => import('@/views/Pwms/warehouse/WarehouseLedgerView.vue'),
+  smartDeviceStats: () => import('@/views/Pwms/warehouse/SmartDeviceStatsView.vue'),
   stockBill: () => import('@/views/Pwms/inout/StockBillView.vue'),
   transfer: () => import('@/views/Pwms/warehouse/TransferManageView.vue'),
   ledger: () => import('@/views/Pwms/asset/LedgerManageView.vue'),
+  emergencyMaterial: () => import('@/views/Pwms/asset/EmergencyMaterialView.vue'),
   assetModule: () => import('@/views/Pwms/asset/AssetModuleView.vue'),
   checkRecord: () => import('@/views/Pwms/asset/CheckRecordView.vue'),
   retirement: () => import('@/views/Pwms/asset/RetirementView.vue'),
@@ -27,6 +29,7 @@ const I = {
   dashboard: 'vi-ant-design:dashboard-outlined',
   warehouse: 'vi-ant-design:home-outlined',
   overview: 'vi-ant-design:eye-outlined',
+  smartDevices: 'vi-ant-design:radar-chart-outlined',
   ledger: 'vi-ant-design:table-outlined',
   inout: 'vi-ant-design:swap-outlined',
   inApply: 'vi-ant-design:login-outlined',
@@ -43,6 +46,7 @@ const I = {
   execute: 'vi-ant-design:play-circle-outlined',
   progress: 'vi-ant-design:bar-chart-outlined',
   spare: 'vi-ant-design:inbox-outlined',
+  emergency: 'vi-ant-design:thunderbolt-outlined',
   instrument: 'vi-ant-design:experiment-outlined',
   tool: 'vi-ant-design:tool-outlined',
   quota: 'vi-ant-design:calculator-outlined',
@@ -167,6 +171,16 @@ function assetCategoryRoutes(
         component: V.ledger,
         meta: { title: '台账管理', icon: I.ledger, category, subModule: 'ledger' as SubModule },
       },
+      ...(category === 'spare'
+        ? [
+            {
+              path: 'emergency',
+              name: `${prefix}-emergency`,
+              component: V.emergencyMaterial,
+              meta: { title: '应急物资管理', icon: I.emergency, category },
+            },
+          ]
+        : []),
       {
         path: 'fault',
         name: `${prefix}-fault`,
@@ -251,6 +265,12 @@ export const pwmsAsyncRoutes: AppRouteRecordRaw[] = [
         name: 'warehouse-ledger',
         component: V.warehouseLedger,
         meta: { title: '生产仓台账', icon: I.ledger },
+      },
+      {
+        path: 'smart-devices',
+        name: 'warehouse-smart-devices',
+        component: V.smartDeviceStats,
+        meta: { title: '仓库智能化设备统计', icon: I.smartDevices },
       },
       inoutChildren('warehouse', undefined, true),
       {

@@ -1,17 +1,24 @@
 ﻿import type { ExportColumn } from '@/utils/pwms/export'
-import type { SubModule } from '@/types'
+import type { AssetCategory, SubModule } from '@/types'
+import { specialtyPathLabel } from '@/types'
 
 const ledgerColumns: ExportColumn[] = [
   { key: 'assetCode', label: '资产编码' },
   { key: 'name', label: '设备名称' },
   { key: 'typeName', label: '设备类型' },
+  {
+    key: 'specialty',
+    label: '专业分类',
+    formatter: (value) => specialtyPathLabel(String(value || ''))
+  },
   { key: 'orgName', label: '所属组织' },
   { key: 'warehouseName', label: '生产仓地点' },
   { key: 'quantity', label: '数量' },
   { key: 'unit', label: '单位' },
   { key: 'status', label: '状态' },
+  { key: 'isEmergency', label: '是否应急', formatter: (value) => (value ? '是' : '否') },
   { key: 'manufacturer', label: '生产厂家' },
-  { key: 'model', label: '规格型号' },
+  { key: 'model', label: '规格型号' }
 ]
 
 const inoutColumns: ExportColumn[] = [
@@ -22,7 +29,7 @@ const inoutColumns: ExportColumn[] = [
   { key: 'operator', label: '操作人' },
   { key: 'orgName', label: '组织机构' },
   { key: 'reason', label: '事由' },
-  { key: 'operateTime', label: '操作时间' },
+  { key: 'operateTime', label: '操作时间' }
 ]
 
 const faultColumns: ExportColumn[] = [
@@ -33,7 +40,7 @@ const faultColumns: ExportColumn[] = [
   { key: 'reporter', label: '上报人' },
   { key: 'orgName', label: '组织机构' },
   { key: 'status', label: '状态' },
-  { key: 'reportTime', label: '上报时间' },
+  { key: 'reportTime', label: '上报时间' }
 ]
 
 const maintenanceColumns: ExportColumn[] = [
@@ -45,7 +52,7 @@ const maintenanceColumns: ExportColumn[] = [
   { key: 'startDate', label: '开始日期' },
   { key: 'endDate', label: '结束日期' },
   { key: 'operator', label: '经办人' },
-  { key: 'status', label: '状态' },
+  { key: 'status', label: '状态' }
 ]
 
 const inventoryColumns: ExportColumn[] = [
@@ -56,18 +63,22 @@ const inventoryColumns: ExportColumn[] = [
   { key: 'totalCount', label: '应盘数量' },
   { key: 'checkedCount', label: '已盘数量' },
   { key: 'status', label: '状态' },
-  { key: 'deadline', label: '截止日期' },
+  { key: 'deadline', label: '截止日期' }
 ]
 
-export function getExportColumns(subModule: SubModule): ExportColumn[] {
+export function getExportColumns(subModule: SubModule, category?: AssetCategory): ExportColumn[] {
   const map = {
     ledger: ledgerColumns,
     inout: inoutColumns,
     fault: faultColumns,
     maintenance: maintenanceColumns,
-    inventory: inventoryColumns,
+    inventory: inventoryColumns
   }
-  return map[subModule]
+  const columns = map[subModule]
+  if (subModule === 'fault' && category === 'spare') {
+    return columns.filter((column) => column.key !== 'faultLevel')
+  }
+  return columns
 }
 
 export function getExportFilename(categoryLabel: string, subModuleLabel: string) {

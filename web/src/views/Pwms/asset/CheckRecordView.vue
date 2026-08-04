@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useDataStore } from '@/stores/data'
@@ -12,6 +12,10 @@ import { categoryLabels } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
 import TablePagination from '@/components/Pwms/TablePagination.vue'
+import AssetDetailDrawer from '@/components/Pwms/AssetDetailDrawer.vue'
+import AssetPicker from '@/components/Pwms/AssetPicker.vue'
+
+type MetricKey = 'all' | 'pass' | 'fail' | 'overdue'
 
 const route = useRoute()
 const dataStore = useDataStore()
@@ -21,6 +25,9 @@ const { scopeByAssets } = useDataScope()
 const category = computed(() => route.meta.category as AssetCategory)
 const checkKind = computed(() => (category.value === 'spare' ? 'trial' : 'calibration') as CheckRecord['checkKind'])
 const title = computed(() => (checkKind.value === 'trial' ? '试验记录' : '检定记录'))
+const activeMetric = ref<MetricKey>('all')
+const detailVisible = ref(false)
+const detailCode = ref<string | null>(null)
 
 const rows = computed(() =>
   scopeByAssets(
@@ -28,7 +35,26 @@ const rows = computed(() =>
   ),
 )
 
-const { currentPage, pageSize, total, pageData } = usePagination(rows, 10)
+const today = new Date().toISOString().slice(0, 10)
+
+function isOverdue(record: CheckRecord) {
+  return !!record.nextDueDate && record.nextDueDate < today
+}
+
+const detailRows = computed(() => {
+  switch (activeMetric.value) {
+    case 'pass':
+      return rows.value.filter((record) => record.result === '合格')
+    case 'fail':
+      return rows.value.filter((record) => record.result === '不合格')
+    case 'overdue':
+      return rows.value.filter(isOverdue)
+    default:
+      return rows.value
+  }
+})
+
+const { currentPage, pageSize, total, pageData } = usePagination(detailRows, 10)
 
 const dialog = ref(false)
 const form = reactive({
@@ -46,8 +72,43 @@ const ledgers = computed(() =>
 const stats = computed(() => {
   const list = rows.value
   const pass = list.filter((r) => r.result === '合格').length
-  return { total: list.length, pass, fail: list.length - pass }
+  const fail = list.filter((r) => r.result === '不合格').length
+  const overdue = list.filter(isOverdue).length
+  return { total: list.length, pass, fail, overdue }
 })
+
+const metricCards = computed(() => [
+  { key: 'all' as const, label: '记录总数', value: stats.value.total, tone: 'primary' },
+  { key: 'pass' as const, label: '检定结果合格', value: stats.value.pass, tone: 'success' },
+  { key: 'fail' as const, label: '检定结果不合格', value: stats.value.fail, tone: 'danger' },
+  { key: 'overdue' as const, label: '当前已超期', value: stats.value.overdue, tone: 'warning' },
+])
+
+const detailTitle = computed(() => {
+  const labels: Record<MetricKey, string> = {
+    all: '全部明细',
+    pass: '合格记录明细',
+    fail: '不合格记录明细',
+    overdue: '超期记录明细',
+  }
+  return labels[activeMetric.value]
+})
+
+function drillMetric(metric: MetricKey) {
+  activeMetric.value = metric
+  currentPage.value = 1
+}
+
+function dueStatus(record: CheckRecord) {
+  return isOverdue(record) ? '超期' : '有效'
+}
+
+function openAssetDetail(assetCode: string) {
+  detailCode.value = assetCode
+  detailVisible.value = true
+}
+
+watch(category, () => drillMetric('all'))
 
 function openCreate() {
   form.assetCode = ledgers.value[0]?.assetCode || ''
@@ -98,35 +159,74 @@ function save() {
       </template>
     </PageHeader>
 
-    <div class="kpi-row">
-      <el-tag type="info">合计 {{ stats.total }}</el-tag>
-      <el-tag type="success">合格 {{ stats.pass }}</el-tag>
-      <el-tag type="danger">不合格 {{ stats.fail }}</el-tag>
+    <div class="metric-grid">
+      <button
+        v-for="metric in metricCards"
+        :key="metric.key"
+        type="button"
+        class="metric-card"
+        :class="[`metric-card--${metric.tone}`, { 'is-active': activeMetric === metric.key }]"
+        @click="drillMetric(metric.key)"
+      >
+        <span>{{ metric.label }}</span>
+        <strong>{{ metric.value }}</strong>
+        <small>点击穿透明细</small>
+      </button>
+    </div>
+
+    <el-alert
+      title="“合格/不合格”是检定结果，“超期”按下次到期日判断，两种口径可能重叠；当前演示策略会影响可用性，正式规则需结合管理办法确认。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="metric-note"
+    />
+
+    <div class="detail-heading">
+      <h4>{{ detailTitle }}</h4>
+      <el-button v-if="activeMetric !== 'all'" link type="primary" @click="drillMetric('all')">
+        查看全部
+      </el-button>
     </div>
 
     <el-table :data="pageData" stripe border>
-      <el-table-column prop="assetCode" label="资产编码" width="130" />
+      <el-table-column prop="assetCode" label="资产编码" width="130">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openAssetDetail(row.assetCode)">
+            {{ row.assetCode }}
+          </el-button>
+        </template>
+      </el-table-column>
       <el-table-column prop="assetName" label="名称" min-width="140" />
       <el-table-column prop="checkDate" label="检测日期" width="120" />
       <el-table-column prop="nextDueDate" label="下次到期" width="120" />
-      <el-table-column prop="result" label="结果" width="90" />
+      <el-table-column prop="result" label="检测结果" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.result === '合格' ? 'success' : 'danger'" size="small">
+            {{ row.result }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="有效状态" width="100">
+        <template #default="{ row }">
+          <el-tag :type="dueStatus(row) === '超期' ? 'warning' : 'success'" size="small">
+            {{ dueStatus(row) }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="operator" label="检测人" width="100" />
       <el-table-column prop="orgName" label="单位" width="120" />
       <el-table-column prop="remark" label="备注" min-width="120" />
+      <template #empty><el-empty :description="`暂无${detailTitle}`" /></template>
     </el-table>
     <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" />
+
+    <AssetDetailDrawer v-model:visible="detailVisible" :asset-code="detailCode" />
 
     <el-dialog v-model="dialog" :title="`新增${title}`" width="480px">
       <el-form label-width="100px">
         <el-form-item label="资产">
-          <el-select v-model="form.assetCode" filterable style="width: 100%" @change="onAssetOrDateChange">
-            <el-option
-              v-for="l in ledgers"
-              :key="l.assetCode"
-              :label="`${l.assetCode} ${l.name}`"
-              :value="l.assetCode"
-            />
-          </el-select>
+          <AssetPicker v-model="form.assetCode" :options="ledgers" @change="onAssetOrDateChange" />
         </el-form-item>
         <el-form-item label="检测日期">
           <el-date-picker
@@ -159,12 +259,77 @@ function save() {
   </PageShell>
 </template>
 
-<style scoped>
-.kpi-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+<style scoped lang="scss">
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
 }
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 15px 16px;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+  background: var(--pwms-panel-elevated, var(--el-fill-color-blank));
+  border: 1px solid var(--pwms-border, var(--el-border-color-lighter));
+  border-radius: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  span,
+  small {
+    color: var(--el-text-color-secondary);
+  }
+
+  strong {
+    font-size: 25px;
+    font-weight: 600;
+  }
+
+  small {
+    font-size: 12px;
+  }
+
+  &:hover,
+  &.is-active {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 0 0 1px var(--el-color-primary-light-7);
+  }
+
+  &--success strong {
+    color: var(--el-color-success);
+  }
+
+  &--danger strong {
+    color: var(--el-color-danger);
+  }
+
+  &--warning strong {
+    color: var(--el-color-warning);
+  }
+}
+
+.metric-note {
+  margin-bottom: 16px;
+}
+
+.detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+
+  h4 {
+    margin: 0;
+    font-size: 15px;
+  }
+}
+
 .hint {
   margin-top: 4px;
   font-size: 12px;

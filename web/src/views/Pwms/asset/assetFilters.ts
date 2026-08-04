@@ -5,11 +5,12 @@ import type {
   InOutRecord,
   InventoryTask,
   MaintenanceRecord,
-  SubModule,
+  SubModule
 } from '@/types'
 import { matchDateRange, matchExact, matchKeyword, uniqueOptions } from '@/utils/pwms/filter'
 import { formatOrgOptionLabel } from '@/utils/pwms/org'
 import type { Organization, WarehouseSite } from '@/types'
+import { specialtyPathLabel } from '@/types'
 
 export interface LedgerFilters {
   keyword: string
@@ -26,6 +27,8 @@ export interface LedgerFilters {
   usable: string
   increaseMode: string
   deviceStatus: string
+  /** 应急物资：'' | '1' | '0'（仅备品备件） */
+  isEmergency: string
 }
 
 export interface InOutFilters {
@@ -62,7 +65,7 @@ export interface InventoryFilters {
 
 const orgOptions = (organizations: Organization[]) => [
   { label: '全部组织', value: '' },
-  ...organizations.map((o) => ({ label: formatOrgOptionLabel(o), value: o.id })),
+  ...organizations.map((o) => ({ label: formatOrgOptionLabel(o), value: o.id }))
 ]
 
 const orgNameOptions = (names: string[]) => uniqueOptions(names, '全部组织')
@@ -79,6 +82,7 @@ export const ledgerFilterDefaults: LedgerFilters = {
   usable: '',
   increaseMode: '',
   deviceStatus: '',
+  isEmergency: ''
 }
 
 function ledgerQualify(item: AssetLedger): string {
@@ -93,26 +97,27 @@ function ledgerInStock(item: AssetLedger): boolean {
 
 function ledgerUsable(item: AssetLedger): boolean {
   if (item.usable != null) return item.usable
-  if (item.disposeStatus === '占用' || item.status === '在用' || item.status === '报废') return false
+  if (item.disposeStatus === '占用' || item.status === '在用' || item.status === '报废')
+    return false
   return ledgerInStock(item)
 }
 
 export function buildLedgerFilterFields(
   items: AssetLedger[],
   organizations: Organization[],
-  warehouseSites: WarehouseSite[],
+  warehouseSites: WarehouseSite[]
 ): FilterField[] {
   const siteOptions = warehouseSites.map((w) => ({
     label: `${w.name}（${w.code}）`,
-    value: w.id,
+    value: w.id
   }))
-  return [
+  const fields: FilterField[] = [
     {
       key: 'keyword',
       type: 'input',
       label: '关键字',
       placeholder: '名称/编码/实物ID/资产编号',
-      width: '200px',
+      width: '200px'
     },
     {
       key: 'orgId',
@@ -120,7 +125,7 @@ export function buildLedgerFilterFields(
       label: '组织',
       placeholder: '组织机构',
       options: orgOptions(organizations),
-      width: '160px',
+      width: '160px'
     },
     {
       key: 'warehouseId',
@@ -128,8 +133,24 @@ export function buildLedgerFilterFields(
       label: '仓室',
       placeholder: '生产仓地点',
       options: [{ label: '全部仓室', value: '' }, ...siteOptions],
-      width: '180px',
+      width: '180px'
     },
+    ...(items.some((item) => item.category === 'spare')
+      ? [
+          {
+            key: 'isEmergency',
+            type: 'select' as const,
+            label: '应急属性',
+            placeholder: '是否应急',
+            options: [
+              { label: '全部', value: '' },
+              { label: '是', value: '1' },
+              { label: '否', value: '0' }
+            ],
+            width: '110px'
+          }
+        ]
+      : []),
     {
       key: 'typeName',
       type: 'select',
@@ -137,28 +158,34 @@ export function buildLedgerFilterFields(
       placeholder: '设备类型',
       options: uniqueOptions(
         items.map((i) => i.typeName),
-        '全部类型',
+        '全部类型'
       ),
-      width: '130px',
+      width: '130px'
     },
     {
       key: 'specialty',
       type: 'select',
       label: '专业',
       placeholder: '专业分类',
-      options: uniqueOptions(
-        items.map((i) => i.specialty || ''),
-        '全部专业',
-      ).filter((o) => o.value !== '' || o.label === '全部专业'),
-      width: '120px',
+      options: [
+        { label: '全部专业', value: '' },
+        ...[...new Set(items.map((i) => i.specialty).filter(Boolean))].map((value) => ({
+          label: specialtyPathLabel(value),
+          value: value || ''
+        }))
+      ],
+      width: '170px'
     },
     {
       key: 'status',
       type: 'select',
       label: '台账状态',
       placeholder: '台账状态',
-      options: uniqueOptions(items.map((i) => i.status), '全部状态'),
-      width: '120px',
+      options: uniqueOptions(
+        items.map((i) => i.status),
+        '全部状态'
+      ),
+      width: '120px'
     },
     {
       key: 'inStock',
@@ -168,9 +195,9 @@ export function buildLedgerFilterFields(
       options: [
         { label: '全部', value: '' },
         { label: '在库', value: '1' },
-        { label: '不在库', value: '0' },
+        { label: '不在库', value: '0' }
       ],
-      width: '110px',
+      width: '110px'
     },
     {
       key: 'qualifyStatus',
@@ -182,9 +209,9 @@ export function buildLedgerFilterFields(
         { label: '正常', value: '正常' },
         { label: '临期', value: '临期' },
         { label: '超期', value: '超期' },
-        { label: '未校验', value: '未校验' },
+        { label: '未校验', value: '未校验' }
       ],
-      width: '110px',
+      width: '110px'
     },
     {
       key: 'usable',
@@ -194,9 +221,9 @@ export function buildLedgerFilterFields(
       options: [
         { label: '全部', value: '' },
         { label: '可用', value: '1' },
-        { label: '不可用', value: '0' },
+        { label: '不可用', value: '0' }
       ],
-      width: '110px',
+      width: '110px'
     },
     {
       key: 'deviceStatus',
@@ -205,9 +232,9 @@ export function buildLedgerFilterFields(
       placeholder: '设备状态',
       options: uniqueOptions(
         items.map((i) => i.deviceStatus || ''),
-        '全部设备状态',
+        '全部设备状态'
       ).filter((o) => o.value !== '' || o.label === '全部设备状态'),
-      width: '130px',
+      width: '130px'
     },
     {
       key: 'increaseMode',
@@ -216,17 +243,18 @@ export function buildLedgerFilterFields(
       placeholder: '增加方式',
       options: uniqueOptions(
         items.map((i) => i.increaseMode || ''),
-        '全部方式',
+        '全部方式'
       ).filter((o) => o.value !== '' || o.label === '全部方式'),
-      width: '120px',
-    },
+      width: '120px'
+    }
   ]
+  return fields
 }
 
 export function matchLedger(
   item: AssetLedger,
   f: LedgerFilters,
-  opts?: { orgIdSet?: Set<string> | null },
+  opts?: { orgIdSet?: Set<string> | null }
 ): boolean {
   if (opts?.orgIdSet?.size) {
     if (!opts.orgIdSet.has(item.orgId)) return false
@@ -243,6 +271,8 @@ export function matchLedger(
   if (f.inStock === '0' && ledgerInStock(item)) return false
   if (f.usable === '1' && !ledgerUsable(item)) return false
   if (f.usable === '0' && ledgerUsable(item)) return false
+  if (f.isEmergency === '1' && item.isEmergency !== true) return false
+  if (f.isEmergency === '0' && item.isEmergency === true) return false
   if (f.qualifyStatus && ledgerQualify(item) !== f.qualifyStatus) return false
   return matchKeyword(
     f.keyword,
@@ -252,7 +282,7 @@ export function matchLedger(
     item.warehouseName,
     item.physicalId,
     item.assetNo,
-    item.keeperName,
+    item.keeperName
   )
 }
 
@@ -261,9 +291,8 @@ export const inOutFilterDefaults: InOutFilters = {
   type: '',
   orgName: '',
   operator: '',
-  dateRange: null,
+  dateRange: null
 }
-
 
 export function buildInOutFilterFieldsFromData(data: InOutRecord[]): FilterField[] {
   return [
@@ -275,25 +304,28 @@ export function buildInOutFilterFieldsFromData(data: InOutRecord[]): FilterField
       options: [
         { label: '全部', value: '' },
         { label: '入库', value: '入库' },
-        { label: '出库', value: '出库' },
+        { label: '出库', value: '出库' }
       ],
-      width: '130px',
+      width: '130px'
     },
     {
       key: 'orgName',
       type: 'select',
       placeholder: '组织机构',
       options: orgNameOptions(data.map((i) => i.orgName)),
-      width: '150px',
+      width: '150px'
     },
     {
       key: 'operator',
       type: 'select',
       placeholder: '操作人',
-      options: uniqueOptions(data.map((i) => i.operator), '全部'),
-      width: '120px',
+      options: uniqueOptions(
+        data.map((i) => i.operator),
+        '全部'
+      ),
+      width: '120px'
     },
-    { key: 'dateRange', type: 'date-range', width: '260px' },
+    { key: 'dateRange', type: 'date-range', width: '260px' }
   ]
 }
 
@@ -312,7 +344,7 @@ export const faultFilterDefaults: FaultFilters = {
   faultLevel: '',
   status: '',
   orgName: '',
-  dateRange: null,
+  dateRange: null
 }
 
 export function buildFaultFilterFields(data: FaultRecord[]): FilterField[] {
@@ -322,24 +354,30 @@ export function buildFaultFilterFields(data: FaultRecord[]): FilterField[] {
       key: 'faultLevel',
       type: 'select',
       placeholder: '故障等级',
-      options: uniqueOptions(data.map((i) => i.faultLevel), '全部等级'),
-      width: '120px',
+      options: uniqueOptions(
+        data.map((i) => i.faultLevel || ''),
+        '全部等级'
+      ),
+      width: '120px'
     },
     {
       key: 'status',
       type: 'select',
       placeholder: '处理状态',
-      options: uniqueOptions(data.map((i) => i.status), '全部状态'),
-      width: '120px',
+      options: uniqueOptions(
+        data.map((i) => i.status),
+        '全部状态'
+      ),
+      width: '120px'
     },
     {
       key: 'orgName',
       type: 'select',
       placeholder: '组织机构',
       options: orgNameOptions(data.map((i) => i.orgName)),
-      width: '150px',
+      width: '150px'
     },
-    { key: 'dateRange', type: 'date-range', width: '260px' },
+    { key: 'dateRange', type: 'date-range', width: '260px' }
   ]
 }
 
@@ -358,7 +396,7 @@ export const maintenanceFilterDefaults: MaintenanceFilters = {
   status: '',
   fundingSource: '',
   vendor: '',
-  dateRange: null,
+  dateRange: null
 }
 
 export function buildMaintenanceFilterFields(data: MaintenanceRecord[]): FilterField[] {
@@ -368,24 +406,33 @@ export function buildMaintenanceFilterFields(data: MaintenanceRecord[]): FilterF
       key: 'status',
       type: 'select',
       placeholder: '状态',
-      options: uniqueOptions(data.map((i) => i.status), '全部状态'),
-      width: '120px',
+      options: uniqueOptions(
+        data.map((i) => i.status),
+        '全部状态'
+      ),
+      width: '120px'
     },
     {
       key: 'fundingSource',
       type: 'select',
       placeholder: '资金来源',
-      options: uniqueOptions(data.map((i) => i.fundingSource), '全部来源'),
-      width: '150px',
+      options: uniqueOptions(
+        data.map((i) => i.fundingSource),
+        '全部来源'
+      ),
+      width: '150px'
     },
     {
       key: 'vendor',
       type: 'select',
       placeholder: '维修厂家',
-      options: uniqueOptions(data.map((i) => i.vendor), '全部厂家'),
-      width: '160px',
+      options: uniqueOptions(
+        data.map((i) => i.vendor),
+        '全部厂家'
+      ),
+      width: '160px'
     },
-    { key: 'dateRange', type: 'date-range', width: '260px' },
+    { key: 'dateRange', type: 'date-range', width: '260px' }
   ]
 }
 
@@ -404,19 +451,31 @@ export const inventoryFilterDefaults: InventoryFilters = {
   orgId: '',
   status: '',
   level: '',
-  dateRange: null,
+  dateRange: null
 }
 
-export function buildInventoryFilterFields(data: InventoryTask[], organizations: Organization[]): FilterField[] {
+export function buildInventoryFilterFields(
+  data: InventoryTask[],
+  organizations: Organization[]
+): FilterField[] {
   return [
     { key: 'keyword', type: 'input', placeholder: '任务名称/负责人', width: '180px' },
-    { key: 'orgId', type: 'select', placeholder: '组织机构', options: orgOptions(organizations), width: '150px' },
+    {
+      key: 'orgId',
+      type: 'select',
+      placeholder: '组织机构',
+      options: orgOptions(organizations),
+      width: '150px'
+    },
     {
       key: 'status',
       type: 'select',
       placeholder: '盘点状态',
-      options: uniqueOptions(data.map((i) => i.status), '全部状态'),
-      width: '120px',
+      options: uniqueOptions(
+        data.map((i) => i.status),
+        '全部状态'
+      ),
+      width: '120px'
     },
     {
       key: 'level',
@@ -425,11 +484,11 @@ export function buildInventoryFilterFields(data: InventoryTask[], organizations:
       options: [
         { label: '全部层级', value: '' },
         { label: '中心汇总', value: 'center' },
-        { label: '生产仓执行', value: 'warehouse' },
+        { label: '生产仓执行', value: 'warehouse' }
       ],
-      width: '130px',
+      width: '130px'
     },
-    { key: 'dateRange', type: 'date-range', width: '260px' },
+    { key: 'dateRange', type: 'date-range', width: '260px' }
   ]
 }
 
@@ -449,7 +508,7 @@ export function getFilterDefaults(subModule: SubModule) {
     inout: inOutFilterDefaults,
     fault: faultFilterDefaults,
     maintenance: maintenanceFilterDefaults,
-    inventory: inventoryFilterDefaults,
+    inventory: inventoryFilterDefaults
   }
   return { ...map[subModule] }
 }
@@ -458,7 +517,7 @@ export function applyAssetFilter(
   subModule: SubModule,
   item: unknown,
   filters: Record<string, unknown>,
-  opts?: { orgIdSet?: Set<string> | null },
+  opts?: { orgIdSet?: Set<string> | null }
 ): boolean {
   switch (subModule) {
     case 'ledger':
@@ -480,7 +539,7 @@ export function buildFilterFields(
   subModule: SubModule,
   data: unknown[],
   organizations: Organization[],
-  warehouseSites: WarehouseSite[] = [],
+  warehouseSites: WarehouseSite[] = []
 ): FilterField[] {
   switch (subModule) {
     case 'ledger':

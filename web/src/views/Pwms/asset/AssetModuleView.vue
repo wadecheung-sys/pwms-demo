@@ -8,6 +8,7 @@ import PageShell from '@/components/Pwms/PageShell.vue'
 import PageToolbar from '@/components/Pwms/PageToolbar.vue'
 import InventoryDrilldownDrawer from '@/components/Pwms/InventoryDrilldownDrawer.vue'
 import AssetDetailDrawer from '@/components/Pwms/AssetDetailDrawer.vue'
+import AssetPicker from '@/components/Pwms/AssetPicker.vue'
 import TablePagination from '@/components/Pwms/TablePagination.vue'
 import type { AssetCategory, AssetLedger, FaultRecord, InventoryTask, SubModule } from '@/types'
 import { categoryLabels, subModuleLabels } from '@/types'
@@ -62,6 +63,7 @@ const convertFormRef = ref<FormInstance>()
 const category = computed(() => route.meta.category as AssetCategory | undefined)
 const aggregateAssets = computed(() => route.meta.aggregateAssets === true)
 const subModule = computed(() => route.meta.subModule as SubModule)
+const showFaultLevel = computed(() => aggregateAssets.value || category.value !== 'spare')
 const pageTitle = computed(() => {
   if (aggregateAssets.value) {
     return `生产仓管理 · ${subModuleLabels[subModule.value]}`
@@ -180,14 +182,17 @@ const canEditCurrent = computed(() => {
 
 const canDispatchInventory = computed(() => can('inventory:dispatch'))
 
-const filterFields = computed(() =>
-  buildFilterFields(
+const filterFields = computed(() => {
+  const fields = buildFilterFields(
     subModule.value,
     categoryData.value,
     visibleOrganizations.value,
     scopeWarehouses(dataStore.warehouseSites),
-  ),
-)
+  )
+  return subModule.value === 'fault' && !showFaultLevel.value
+    ? fields.filter((field) => field.key !== 'faultLevel')
+    : fields
+})
 
 const ledgerOrgIdSet = computed(() => {
   const orgId = String(applied.value.orgId || '')
@@ -205,7 +210,7 @@ const tableData = computed(() => {
 
 const { currentPage, pageSize, total: pageTotal, pageData } = usePagination(tableData, 10)
 
-const exportColumns = computed(() => getExportColumns(subModule.value))
+const exportColumns = computed(() => getExportColumns(subModule.value, category.value))
 const exportFilename = computed(() => {
   const catLabel = aggregateAssets.value ? '生产仓管理' : categoryLabels[category.value!]
   return getExportFilename(catLabel, subModuleLabels[subModule.value])
@@ -358,7 +363,7 @@ function openDialog(row?: AssetLedger) {
 function openEditFault(row: (typeof dataStore.faultRecords)[0]) {
   editingId.value = row.id
   Object.assign(faultForm, {
-    assetCode: row.assetCode, faultDesc: row.faultDesc, faultLevel: row.faultLevel,
+    assetCode: row.assetCode, faultDesc: row.faultDesc, faultLevel: row.faultLevel || '一般',
     reporter: row.reporter, status: row.status,
   })
   dialogVisible.value = true
@@ -417,13 +422,17 @@ async function handleSave() {
         break
       }
       case 'fault':
+        const { faultLevel, ...faultWithoutLevel } = faultForm
+        const faultPayload = showFaultLevel.value
+          ? { ...faultWithoutLevel, faultLevel }
+          : { ...faultWithoutLevel, faultLevel: undefined }
         if (editingId.value) {
-          dataStore.updateFaultRecord(editingId.value, { ...faultForm })
+          dataStore.updateFaultRecord(editingId.value, faultPayload)
           ElMessage.success('故障记录已更新')
         } else {
           const faultLedger = dataStore.getLedgerByCode(faultForm.assetCode)
           if (!faultLedger) throw new Error('资产编码不存在')
-          dataStore.addFaultRecord({ category: faultLedger.category, ...faultForm })
+          dataStore.addFaultRecord({ category: faultLedger.category, ...faultPayload })
           ElMessage.success('故障记录已新增')
         }
         break
@@ -655,7 +664,7 @@ function onDialogOpen() {
         <el-table-column prop="assetCode" label="资产编码" width="130" />
         <el-table-column prop="assetName" label="设备名称" width="120" />
         <el-table-column prop="faultDesc" label="故障描述" min-width="180" />
-        <el-table-column prop="faultLevel" label="等级" width="80">
+        <el-table-column v-if="showFaultLevel" prop="faultLevel" label="等级" width="80">
           <template #default="{ row }">
             <el-tag :type="row.faultLevel === '紧急' ? 'danger' : row.faultLevel === '严重' ? 'warning' : 'info'" size="small">{{ row.faultLevel }}</el-tag>
           </template>
@@ -799,9 +808,7 @@ function onDialogOpen() {
 
       <el-form v-else-if="subModule === 'inout'" ref="formRef" :model="inOutForm" :rules="inOutRules" label-width="100px">
         <el-form-item label="关联资产" prop="assetCode">
-          <el-select v-model="inOutForm.assetCode" filterable style="width: 100%">
-            <el-option v-for="l in categoryLedgers" :key="l.assetCode" :label="`${l.assetCode} - ${l.name}（库存${l.quantity}）`" :value="l.assetCode" />
-          </el-select>
+          <AssetPicker v-model="inOutForm.assetCode" :options="categoryLedgers" show-stock />
         </el-form-item>
         <el-form-item label="类型">
           <el-radio-group v-model="inOutForm.type"><el-radio value="入库">入库</el-radio><el-radio value="出库">出库</el-radio></el-radio-group>
@@ -813,12 +820,10 @@ function onDialogOpen() {
 
       <el-form v-else-if="subModule === 'fault'" ref="formRef" :model="faultForm" :rules="faultRules" label-width="100px">
         <el-form-item label="关联资产" prop="assetCode">
-          <el-select v-model="faultForm.assetCode" filterable style="width: 100%" :disabled="!!editingId">
-            <el-option v-for="l in categoryLedgers" :key="l.assetCode" :label="`${l.assetCode} - ${l.name}`" :value="l.assetCode" />
-          </el-select>
+          <AssetPicker v-model="faultForm.assetCode" :options="categoryLedgers" :disabled="!!editingId" />
         </el-form-item>
         <el-form-item label="故障描述" prop="faultDesc"><el-input v-model="faultForm.faultDesc" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="故障等级">
+        <el-form-item v-if="showFaultLevel" label="故障等级">
           <el-select v-model="faultForm.faultLevel" style="width: 100%">
             <el-option label="一般" value="一般" /><el-option label="严重" value="严重" /><el-option label="紧急" value="紧急" />
           </el-select>
@@ -833,9 +838,7 @@ function onDialogOpen() {
 
       <el-form v-else-if="subModule === 'maintenance'" ref="formRef" :model="maintenanceForm" :rules="maintenanceRules" label-width="100px">
         <el-form-item label="关联资产" prop="assetCode">
-          <el-select v-model="maintenanceForm.assetCode" filterable style="width: 100%" :disabled="!!editingId">
-            <el-option v-for="l in categoryLedgers" :key="l.assetCode" :label="`${l.assetCode} - ${l.name}`" :value="l.assetCode" />
-          </el-select>
+          <AssetPicker v-model="maintenanceForm.assetCode" :options="categoryLedgers" :disabled="!!editingId" />
         </el-form-item>
         <el-form-item label="维修项目" prop="projectName"><el-input v-model="maintenanceForm.projectName" /></el-form-item>
         <el-form-item label="资金来源" prop="fundingSource"><el-input v-model="maintenanceForm.fundingSource" placeholder="如：年度维修预算" /></el-form-item>

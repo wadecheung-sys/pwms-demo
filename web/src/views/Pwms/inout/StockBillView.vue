@@ -28,6 +28,7 @@ import {
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
 import TablePagination from '@/components/Pwms/TablePagination.vue'
+import AssetPicker from '@/components/Pwms/AssetPicker.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -864,14 +865,7 @@ const submitButtonLabel = computed(() => {
     </p>
     <el-form label-width="110px">
       <el-form-item label="物资">
-        <el-select v-model="form.assetCode" filterable style="width: 100%">
-          <el-option
-            v-for="l in scopedLedgers"
-            :key="l.id"
-            :label="`${l.assetCode} ${l.name}（库存${l.quantity}）`"
-            :value="l.assetCode"
-          />
-        </el-select>
+        <AssetPicker v-model="form.assetCode" :options="scopedLedgers" show-stock />
       </el-form-item>
       <el-form-item label="资金来源">
         <el-select v-model="form.fundingSource" style="width: 100%">

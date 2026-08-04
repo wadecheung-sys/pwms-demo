@@ -10,19 +10,24 @@ import type { TransferBill } from '@/types'
 import PageHeader from '@/components/Pwms/PageHeader.vue'
 import PageShell from '@/components/Pwms/PageShell.vue'
 import TablePagination from '@/components/Pwms/TablePagination.vue'
+import AssetPicker from '@/components/Pwms/AssetPicker.vue'
 
 const dataStore = useDataStore()
 const userStore = useUserStore()
 const { scopeByOrg, scopeWarehouses } = useDataScope()
 
 const canApply = computed(
-  () => hasPermission(userStore.context, 'inout:apply') || hasPermission(userStore.context, 'inout:edit'),
+  () =>
+    hasPermission(userStore.context, 'inout:apply') ||
+    hasPermission(userStore.context, 'inout:edit')
 )
 const canApprove = computed(
-  () => hasPermission(userStore.context, 'inout:approve') || hasPermission(userStore.context, '*'),
+  () => hasPermission(userStore.context, 'inout:approve') || hasPermission(userStore.context, '*')
 )
 const canConfirm = computed(
-  () => hasPermission(userStore.context, 'inout:confirm') || hasPermission(userStore.context, 'inout:edit'),
+  () =>
+    hasPermission(userStore.context, 'inout:confirm') ||
+    hasPermission(userStore.context, 'inout:edit')
 )
 
 const rows = computed(() => scopeByOrg([...dataStore.transferBills]))
@@ -31,12 +36,16 @@ const { currentPage, pageSize, total, pageData } = usePagination(rows, 10)
 const stats = computed(() => ({
   pending: rows.value.filter((b) => b.status === '待审批').length,
   confirm: rows.value.filter((b) => b.status === '待确认').length,
-  done: rows.value.filter((b) => b.status === '已完成').length,
+  done: rows.value.filter((b) => b.status === '已完成').length
 }))
 
-const warehouses = computed(() => scopeWarehouses([...dataStore.warehouseSites]))
+const warehouses = computed(() =>
+  scopeWarehouses([...dataStore.warehouseSites]).filter(
+    (warehouse) => warehouse.useStatus === '在用'
+  )
+)
 const ledgers = computed(() =>
-  scopeByOrg(dataStore.ledgers.filter((l) => l.status !== '报废' && l.quantity > 0)),
+  scopeByOrg(dataStore.ledgers.filter((l) => l.status !== '报废' && l.quantity > 0))
 )
 
 const dialog = ref(false)
@@ -48,7 +57,7 @@ const form = reactive({
   assetCode: '',
   quantity: 1,
   toWarehouseId: '',
-  reason: '',
+  reason: ''
 })
 
 function openCreate() {
@@ -83,7 +92,7 @@ function submitCreate() {
       orgId: ledger.orgId,
       orgName: ledger.orgName,
       reason: form.reason || '仓间调拨',
-      status: '待审批',
+      status: '待审批'
     })
     ElMessage.success('转仓申请已提交')
     dialog.value = false
@@ -105,7 +114,7 @@ async function doReject(row: TransferBill) {
   try {
     const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回', {
       inputPlaceholder: '原因',
-      confirmButtonText: '驳回',
+      confirmButtonText: '驳回'
     })
     dataStore.rejectTransferBill(row.id, userStore.displayName, value || '驳回')
     ElMessage.success('已驳回')
@@ -178,30 +187,32 @@ function doConfirm() {
     <el-dialog v-model="dialog" title="发起转仓调拨" width="520px">
       <el-form label-width="100px">
         <el-form-item label="物资">
-          <el-select v-model="form.assetCode" filterable style="width: 100%">
-            <el-option
-              v-for="l in ledgers"
-              :key="l.id"
-              :label="`${l.assetCode} ${l.name}（${l.warehouseName}·库存${l.quantity}）`"
-              :value="l.assetCode"
-            />
-          </el-select>
+          <AssetPicker v-model="form.assetCode" :options="ledgers" show-stock />
         </el-form-item>
         <el-form-item label="调出仓">
           <el-input :model-value="selectedLedger()?.warehouseName || '—'" disabled />
         </el-form-item>
         <el-form-item label="调入仓">
-          <el-select v-model="form.toWarehouseId" filterable style="width: 100%">
+          <el-select
+            v-model="form.toWarehouseId"
+            filterable
+            no-data-text="当前权限范围内暂无可调入的在用仓库"
+            style="width: 100%"
+          >
             <el-option
               v-for="w in warehouses.filter((x) => x.id !== selectedLedger()?.warehouseId)"
               :key="w.id"
-              :label="w.name"
+              :label="`${w.name}（${w.orgName}）`"
               :value="w.id"
             />
           </el-select>
         </el-form-item>
         <el-form-item label="数量">
-          <el-input-number v-model="form.quantity" :min="1" :max="selectedLedger()?.quantity || 1" />
+          <el-input-number
+            v-model="form.quantity"
+            :min="1"
+            :max="selectedLedger()?.quantity || 1"
+          />
         </el-form-item>
         <el-form-item label="事由">
           <el-input v-model="form.reason" type="textarea" />

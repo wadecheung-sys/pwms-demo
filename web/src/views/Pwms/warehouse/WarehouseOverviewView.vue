@@ -18,7 +18,7 @@ import PageShell from '@/components/Pwms/PageShell.vue'
 const route = useRoute()
 const router = useRouter()
 const dataStore = useDataStore()
-const { scopeWarehouses, scopeLedgersByCategories } = useDataScope()
+const { scopeByOrg, scopeWarehouses, scopeLedgersByCategories } = useDataScope()
 
 const selectedWarehouseId = ref('')
 /** 同构层级穿透栈：空 = 全省（地市列表） */
@@ -29,6 +29,7 @@ const currentDrillOrgId = computed(() =>
 
 const warehouseOptions = computed(() => scopeWarehouses(dataStore.warehouseSites))
 const scopedLedgers = computed(() => scopeLedgersByCategories(dataStore.ledgers, ['spare', 'instrument', 'tool']))
+const scopedSmartDevices = computed(() => scopeByOrg(dataStore.warehouseSmartDevices))
 
 const currentSite = computed(() =>
   selectedWarehouseId.value ? dataStore.getWarehouseSite(selectedWarehouseId.value) : null,
@@ -68,6 +69,24 @@ function computeCategoryStat(warehouseId: string, category: AssetCategory): Cate
 const categoryStats = computed(() => {
   if (!selectedWarehouseId.value) return []
   return categoryOrder.map((cat) => computeCategoryStat(selectedWarehouseId.value, cat))
+})
+
+const warehouseContentStats = computed(() => {
+  if (!selectedWarehouseId.value) return []
+  const smartDevices = scopedSmartDevices.value.filter((d) => d.warehouseId === selectedWarehouseId.value)
+  return [
+    ...categoryStats.value.map((row) => ({ ...row, key: row.category, action: 'ledger' as const })),
+    {
+      key: 'smart-devices',
+      label: '仓库智能化设备',
+      typeCount: new Set(smartDevices.map((d) => d.category)).size,
+      totalQuantity: smartDevices.reduce((sum, item) => sum + item.quantity, 0),
+      inStockQuantity: smartDevices
+        .filter((item) => item.status === '在用')
+        .reduce((sum, item) => sum + item.quantity, 0),
+      action: 'smart-devices' as const,
+    },
+  ]
 })
 
 const totalDevices = computed(() => categoryStats.value.reduce((s, r) => s + r.totalQuantity, 0))
@@ -249,6 +268,15 @@ function goLedger(category: AssetCategory) {
   router.push({ path: `/${category}/ledger`, query: { warehouseId: selectedWarehouseId.value } })
 }
 
+function goContentDetail(row: (typeof warehouseContentStats.value)[number]) {
+  if (!selectedWarehouseId.value) return
+  if (row.action === 'smart-devices') {
+    router.push({ path: '/warehouse/smart-devices', query: { warehouseId: selectedWarehouseId.value } })
+    return
+  }
+  goLedger(row.category)
+}
+
 function goWarehouseLedger(site?: WarehouseSite | null) {
   router.push({ path: '/warehouse/ledger', query: site ? { keyword: site.name } : {} })
 }
@@ -335,14 +363,16 @@ function assetNatureDisplay(site: WarehouseSite) {
           <h3>仓内物资统计</h3>
           <span class="stats-summary">合计 {{ totalDevices }} 件/套/台</span>
         </div>
-        <el-table :data="categoryStats" stripe border>
+        <el-table :data="warehouseContentStats" stripe border>
           <el-table-column prop="label" label="类别" width="120" />
           <el-table-column prop="typeCount" label="种类数" width="100" align="center" />
           <el-table-column prop="totalQuantity" label="总数量" width="100" align="center" />
-          <el-table-column prop="inStockQuantity" label="在库数" width="100" align="center" />
+          <el-table-column prop="inStockQuantity" label="在库/在用数" width="120" align="center" />
           <el-table-column label="操作" min-width="130">
             <template #default="{ row }">
-              <el-button type="primary" size="small" plain @click="goLedger(row.category)">查看台账</el-button>
+              <el-button type="primary" size="small" plain @click="goContentDetail(row)">
+                {{ row.action === 'smart-devices' ? '查看设备' : '查看台账' }}
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -364,7 +394,7 @@ function assetNatureDisplay(site: WarehouseSite) {
       <template v-else>
         <div class="kpi-grid">
           <div class="kpi"><div class="kpi__label">生产仓总数</div><div class="kpi__value">{{ provinceSummary.totalSites }}</div></div>
-          <div class="kpi"><div class="kpi__label">省级挂靠</div><div class="kpi__value">{{ provinceSummary.province }}</div></div>
+          <div class="kpi"><div class="kpi__label">省级</div><div class="kpi__value">{{ provinceSummary.province }}</div></div>
           <div class="kpi"><div class="kpi__label">市级</div><div class="kpi__value">{{ provinceSummary.city }}</div></div>
           <div class="kpi"><div class="kpi__label">县级</div><div class="kpi__value">{{ provinceSummary.county }}</div></div>
           <div class="kpi"><div class="kpi__label">供电所</div><div class="kpi__value">{{ provinceSummary.station }}</div></div>

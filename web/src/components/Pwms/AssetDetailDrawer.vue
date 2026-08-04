@@ -2,6 +2,7 @@
 import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { AssetLifecycleEvent } from '@/types'
+import { specialtyPathLabel } from '@/types'
 import { useDataStore } from '@/stores/data'
 import { calcWarehouseAgeDays } from '@/utils/pwms/ledgerFlags'
 
@@ -20,19 +21,17 @@ watch(
   (code) => {
     visible.value = Boolean(code)
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 watch(visible, (v) => {
   if (!v) emit('close')
 })
 
-const ledger = computed(() =>
-  props.assetCode ? dataStore.getLedgerByCode(props.assetCode) : null,
-)
+const ledger = computed(() => (props.assetCode ? dataStore.getLedgerByCode(props.assetCode) : null))
 
 const timeline = computed(() =>
-  props.assetCode ? dataStore.getAssetLifecycle(props.assetCode) : [],
+  props.assetCode ? dataStore.getAssetLifecycle(props.assetCode) : []
 )
 
 const stats = computed(() => {
@@ -41,7 +40,7 @@ const stats = computed(() => {
   return {
     inout: dataStore.inOutRecords.filter((r) => r.assetCode === code).length,
     fault: dataStore.faultRecords.filter((r) => r.assetCode === code).length,
-    maintenance: dataStore.maintenanceRecords.filter((r) => r.assetCode === code).length,
+    maintenance: dataStore.maintenanceRecords.filter((r) => r.assetCode === code).length
   }
 })
 
@@ -53,7 +52,13 @@ function goWarehouseLedger() {
 }
 
 function eventIcon(type: AssetLifecycleEvent['type']) {
-  const map = { ledger: 'Document', inout: 'Sort', fault: 'Warning', maintenance: 'Tools', inventory: 'List' }
+  const map = {
+    ledger: 'Document',
+    inout: 'Sort',
+    fault: 'Warning',
+    maintenance: 'Tools',
+    inventory: 'List'
+  }
   return map[type] ?? 'InfoFilled'
 }
 
@@ -93,65 +98,104 @@ function usableLabel() {
         <el-descriptions-item label="实物ID">{{ ledger.physicalId || '—' }}</el-descriptions-item>
         <el-descriptions-item label="资产编号">{{ ledger.assetNo || '—' }}</el-descriptions-item>
         <el-descriptions-item label="设备类型">{{ ledger.typeName }}</el-descriptions-item>
-        <el-descriptions-item label="专业分类">{{ ledger.specialty || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="专业分类">{{
+          specialtyPathLabel(ledger.specialty)
+        }}</el-descriptions-item>
         <el-descriptions-item label="所属组织">{{ ledger.orgName }}</el-descriptions-item>
         <el-descriptions-item label="生产仓地点" :span="2">
-          <el-button link type="primary" @click="goWarehouseLedger">{{ ledger.warehouseName }}</el-button>
+          <el-button link type="primary" @click="goWarehouseLedger">{{
+            ledger.warehouseName
+          }}</el-button>
         </el-descriptions-item>
         <el-descriptions-item label="库区/货架/仓位">
-          {{ [ledger.storageArea, ledger.shelfNo, ledger.binNo].filter(Boolean).join(' / ') || '—' }}
+          {{
+            [ledger.storageArea, ledger.shelfNo, ledger.binNo].filter(Boolean).join(' / ') || '—'
+          }}
         </el-descriptions-item>
         <el-descriptions-item label="保管人">{{ ledger.keeperName || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="库存">{{ ledger.quantity }} {{ ledger.unit }}</el-descriptions-item>
+        <el-descriptions-item label="库存"
+          >{{ ledger.quantity }} {{ ledger.unit }}</el-descriptions-item
+        >
         <el-descriptions-item label="在库">
-          <el-tag size="small" :type="inStockLabel() === '在库' ? 'success' : 'info'">{{ inStockLabel() }}</el-tag>
+          <el-tag size="small" :type="inStockLabel() === '在库' ? 'success' : 'info'">{{
+            inStockLabel()
+          }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="合格">
           <el-tag
             size="small"
-            :type="qualifyLabel() === '超期' ? 'danger' : qualifyLabel() === '临期' ? 'warning' : 'success'"
+            :type="
+              qualifyLabel() === '超期'
+                ? 'danger'
+                : qualifyLabel() === '临期'
+                  ? 'warning'
+                  : 'success'
+            "
           >
             {{ qualifyLabel() }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="可用">
-          <el-tag size="small" :type="usableLabel() === '可用' ? 'success' : 'warning'">{{ usableLabel() }}</el-tag>
+          <el-tag size="small" :type="usableLabel() === '可用' ? 'success' : 'warning'">{{
+            usableLabel()
+          }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="设备状态">{{ ledger.deviceStatus || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="生产厂家">{{ ledger.manufacturer || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="设备状态">{{
+          ledger.deviceStatus || '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="生产厂家">{{
+          ledger.manufacturer || '—'
+        }}</el-descriptions-item>
         <el-descriptions-item label="规格型号">{{ ledger.model || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="电压等级">{{ ledger.voltageLevel || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="资产性质">{{ ledger.assetNature || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="增加方式">{{ ledger.increaseMode || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="电压等级">{{
+          ledger.voltageLevel || '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="资产性质">{{
+          ledger.assetNature || '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="增加方式">{{
+          ledger.increaseMode || '—'
+        }}</el-descriptions-item>
         <el-descriptions-item label="购入日期">{{ ledger.purchaseDate }}</el-descriptions-item>
         <el-descriptions-item label="保修截止">{{ ledger.warrantyDate }}</el-descriptions-item>
-        <el-descriptions-item v-if="ledger.category === 'instrument' || ledger.category === 'spare'" label="最近校验/试验">
+        <el-descriptions-item
+          v-if="ledger.category === 'instrument' || ledger.category === 'spare'"
+          label="最近校验/试验"
+        >
           {{ ledger.lastCheckDate || '—' }}
         </el-descriptions-item>
         <el-descriptions-item v-if="ledger.category === 'spare'" label="备品来源">
           {{ ledger.spareSource || '—' }}
         </el-descriptions-item>
-        <el-descriptions-item label="入库时间">{{ ledger.inboundTime || '—' }}</el-descriptions-item>
+        <el-descriptions-item v-if="ledger.category === 'spare'" label="是否应急">
+          <el-tag size="small" :type="ledger.isEmergency ? 'danger' : 'info'">
+            {{ ledger.isEmergency ? '是' : '否' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="入库时间">{{
+          ledger.inboundTime || '—'
+        }}</el-descriptions-item>
         <el-descriptions-item label="在库时长(天)">
           {{ calcWarehouseAgeDays(ledger.inboundTime) ?? ledger.warehouseAgeDays ?? '—' }}
         </el-descriptions-item>
       </el-descriptions>
 
       <div class="stat-row">
-        <div class="stat-item"><span>{{ stats.inout }}</span> 出入库</div>
-        <div class="stat-item"><span>{{ stats.fault }}</span> 故障</div>
-        <div class="stat-item"><span>{{ stats.maintenance }}</span> 维修</div>
+        <div class="stat-item"
+          ><span>{{ stats.inout }}</span> 出入库</div
+        >
+        <div class="stat-item"
+          ><span>{{ stats.fault }}</span> 故障</div
+        >
+        <div class="stat-item"
+          ><span>{{ stats.maintenance }}</span> 维修</div
+        >
       </div>
 
       <h4 class="section-title">全生命周期时间线</h4>
       <el-empty v-if="!timeline.length" description="暂无生命周期记录" />
       <el-timeline v-else>
-        <el-timeline-item
-          v-for="ev in timeline"
-          :key="ev.id"
-          :timestamp="ev.time"
-          placement="top"
-        >
+        <el-timeline-item v-for="ev in timeline" :key="ev.id" :timestamp="ev.time" placement="top">
           <div class="timeline-card">
             <div class="timeline-head">
               <el-icon><component :is="eventIcon(ev.type)" /></el-icon>

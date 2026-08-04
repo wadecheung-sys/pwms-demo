@@ -15,7 +15,7 @@ import {
   getOrgDescendantIds,
   getValidParentOptions,
   orgTypeLabels,
-  orgTypeTagType,
+  orgTypeTagType
 } from '@/utils/pwms/org'
 import type { Organization, OrgType } from '@/types'
 
@@ -28,21 +28,24 @@ const treeRef = ref()
 
 const orgTypeOptions = (Object.keys(orgTypeLabels) as OrgType[]).map((type) => ({
   label: orgTypeLabels[type],
-  value: type,
+  value: type
 }))
 
 const filterDefaults = { keyword: '', type: '' }
-const { draft, search, reset, filterListWithCount, resultCount } = useTableFilter(filterDefaults, (item, f) => {
-  const o = item as Organization
-  const inTree =
-    !selectedTreeOrgId.value ||
-    getOrgDescendantIds(dataStore.organizations, selectedTreeOrgId.value, true).includes(o.id)
-  return (
-    inTree &&
-    matchExact(o.type, f.type as string) &&
-    matchKeyword(f.keyword as string, o.name, o.code, o.shortName, o.leader, o.phone)
-  )
-})
+const { draft, search, reset, filterListWithCount, resultCount } = useTableFilter(
+  filterDefaults,
+  (item, f) => {
+    const o = item as Organization
+    const inTree =
+      !selectedTreeOrgId.value ||
+      getOrgDescendantIds(dataStore.organizations, selectedTreeOrgId.value, true).includes(o.id)
+    return (
+      inTree &&
+      matchExact(o.type, f.type as string) &&
+      matchKeyword(f.keyword as string, o.name, o.code, o.shortName, o.leader, o.phone)
+    )
+  }
+)
 
 const filterFields = computed<FilterField[]>(() => [
   { key: 'keyword', type: 'input', placeholder: '名称/编码/负责人', width: '200px' },
@@ -51,8 +54,8 @@ const filterFields = computed<FilterField[]>(() => [
     type: 'select',
     placeholder: '组织类型',
     options: [{ label: '全部类型', value: '' }, ...orgTypeOptions],
-    width: '150px',
-  },
+    width: '150px'
+  }
 ])
 
 const treeData = computed(() => dataStore.getOrgTree())
@@ -63,33 +66,33 @@ const form = reactive({
   name: '',
   code: '',
   type: 'city' as OrgType,
-  parentId: null as string | null,
+  parentId: undefined as string | undefined,
   shortName: '',
   leader: '',
-  phone: '',
+  phone: ''
 })
 
 const parentOptions = computed(() =>
-  getValidParentOptions(dataStore.organizations, form.type, editingId.value),
+  getValidParentOptions(dataStore.organizations, form.type, editingId.value)
 )
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入组织名称', trigger: 'blur' }],
   code: [{ required: true, message: '请输入组织编码', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择组织类型', trigger: 'change' }],
+  type: [{ required: true, message: '请选择组织类型', trigger: 'change' }]
 }
 
 watch(
   () => form.type,
   (type) => {
     if (type === 'division') {
-      form.parentId = null
+      form.parentId = undefined
       return
     }
     if (form.parentId && !parentOptions.value.some((o) => o.id === form.parentId)) {
-      form.parentId = parentOptions.value[0]?.id ?? null
+      form.parentId = parentOptions.value[0]?.id
     }
-  },
+  }
 )
 
 function openDialog(row?: Organization) {
@@ -99,20 +102,20 @@ function openDialog(row?: Organization) {
       name: row.name,
       code: row.code,
       type: row.type,
-      parentId: row.parentId,
+      parentId: row.parentId ?? undefined,
       shortName: row.shortName ?? '',
       leader: row.leader ?? '',
-      phone: row.phone ?? '',
+      phone: row.phone ?? ''
     })
   } else {
     Object.assign(form, {
       name: '',
       code: '',
       type: 'city',
-      parentId: selectedTreeOrgId.value,
+      parentId: selectedTreeOrgId.value ?? undefined,
       shortName: '',
       leader: '',
-      phone: '',
+      phone: ''
     })
   }
   dialogVisible.value = true
@@ -137,10 +140,10 @@ async function handleSave() {
       name: form.name,
       code: form.code,
       type: form.type,
-      parentId: form.type === 'division' ? null : form.parentId,
+      parentId: form.type === 'division' ? null : (form.parentId ?? null),
       shortName: form.shortName || undefined,
       leader: form.leader || undefined,
-      phone: form.phone || undefined,
+      phone: form.phone || undefined
     }
     if (editingId.value) {
       dataStore.updateOrganization(editingId.value, payload)
@@ -177,7 +180,13 @@ async function handleDelete(row: Organization) {
       <div class="page-panel org-tree-panel">
         <div class="panel-header">
           <span class="panel-title">组织树</span>
-          <el-button v-if="selectedTreeOrgId" type="primary" size="small" plain @click="clearTreeFilter">
+          <el-button
+            v-if="selectedTreeOrgId"
+            type="primary"
+            size="small"
+            plain
+            @click="clearTreeFilter"
+          >
             清除筛选
           </el-button>
         </div>
@@ -237,8 +246,12 @@ async function handleDelete(row: Organization) {
           <el-table-column label="操作" width="168" fixed="right">
             <template #default="{ row }">
               <div class="table-actions">
-                <el-button type="primary" size="small" plain @click="openDialog(row)">编辑</el-button>
-                <el-button type="danger" size="small" plain @click="handleDelete(row)">删除</el-button>
+                <el-button type="primary" size="small" plain @click="openDialog(row)"
+                  >编辑</el-button
+                >
+                <el-button type="danger" size="small" plain @click="handleDelete(row)"
+                  >删除</el-button
+                >
               </div>
             </template>
           </el-table-column>
@@ -248,18 +261,35 @@ async function handleDelete(row: Organization) {
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑组织' : '新增组织'" width="560px" destroy-on-close>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑组织' : '新增组织'"
+      width="560px"
+      destroy-on-close
+    >
       <p class="dialog-hint">请按层级选择正确的上级组织；分部为顶级节点，无需上级。</p>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="96px">
         <el-form-item label="组织名称" prop="name"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="组织编码" prop="code"><el-input v-model="form.code" placeholder="如 SY-CITY" /></el-form-item>
+        <el-form-item label="组织编码" prop="code"
+          ><el-input v-model="form.code" placeholder="如 SY-CITY"
+        /></el-form-item>
         <el-form-item label="组织类型" prop="type">
           <el-select v-model="form.type" style="width: 100%">
-            <el-option v-for="opt in orgTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+            <el-option
+              v-for="opt in orgTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.type !== 'division'" label="上级组织" prop="parentId">
-          <el-select v-model="form.parentId" placeholder="请选择上级组织" style="width: 100%" filterable>
+          <el-select
+            v-model="form.parentId"
+            placeholder="请选择上级组织"
+            style="width: 100%"
+            filterable
+          >
             <el-option
               v-for="org in parentOptions"
               :key="org.id"
@@ -268,7 +298,9 @@ async function handleDelete(row: Organization) {
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="简称"><el-input v-model="form.shortName" placeholder="可选" /></el-form-item>
+        <el-form-item label="简称"
+          ><el-input v-model="form.shortName" placeholder="可选"
+        /></el-form-item>
         <el-form-item label="负责人"><el-input v-model="form.leader" /></el-form-item>
         <el-form-item label="联系电话"><el-input v-model="form.phone" /></el-form-item>
       </el-form>
