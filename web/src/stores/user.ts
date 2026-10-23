@@ -1,6 +1,6 @@
 ﻿import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { systemAccounts } from '@/mock/auth'
+import { systemAccounts, verifyPassword, getDemoToken, isCurrentDemoSession } from '@/mock/auth'
 import { useDataStore } from '@/stores/data'
 import type { DataScope, OrgType, UserContext } from '@/types'
 import { orgTypeLabels } from '@/utils/pwms/org'
@@ -19,7 +19,7 @@ function emptyContext(): UserContext {
     roleId: '',
     roleName: '',
     permissions: [],
-    dataScope: 'org_only',
+    dataScope: 'org_only'
   }
 }
 
@@ -27,7 +27,12 @@ function loadContext(): UserContext | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as UserContext
+    const context = JSON.parse(raw) as UserContext
+    if (!isCurrentDemoSession(context.username, context.token)) {
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+    return context
   } catch {
     return null
   }
@@ -41,8 +46,8 @@ function saveContext(ctx: UserContext | null) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(ctx))
 }
 
-function resolveLogin(username: string, password: string): UserContext | null {
-  const account = systemAccounts.find((a) => a.username === username && a.password === password)
+function resolveContext(username: string): UserContext | null {
+  const account = systemAccounts.find((a) => a.username === username)
   if (!account) return null
 
   const dataStore = useDataStore()
@@ -53,7 +58,7 @@ function resolveLogin(username: string, password: string): UserContext | null {
   const org = dataStore.organizations.find((o) => o.id === person.orgId)
 
   return {
-    token: `token-${account.username}`,
+    token: getDemoToken(account.username),
     username: account.username,
     displayName: person.name,
     personId: person.id,
@@ -63,7 +68,7 @@ function resolveLogin(username: string, password: string): UserContext | null {
     roleId: person.roleId,
     roleName: person.roleName || role?.name || '',
     permissions: role?.permissions ?? [],
-    dataScope: account.dataScope as DataScope,
+    dataScope: account.dataScope as DataScope
   }
 }
 
@@ -83,7 +88,7 @@ function refreshFromMasterData(ctx: UserContext): UserContext {
     orgType: (org?.type ?? ctx.orgType) as OrgType,
     roleId: person.roleId,
     roleName: person.roleName || role?.name || ctx.roleName,
-    permissions: role?.permissions ?? ctx.permissions,
+    permissions: role?.permissions ?? ctx.permissions
   }
 }
 
@@ -98,8 +103,10 @@ export const useUserStore = defineStore('pwms-user', () => {
     return `${orgTypeLabels[context.value.orgType]} · ${context.value.orgName}`
   })
 
-  function login(user: string, password: string): boolean {
-    const resolved = resolveLogin(user, password)
+  async function login(user: string, password: string): Promise<boolean> {
+    if (!systemAccounts.some((account) => account.username === user)) return false
+    if (!(await verifyPassword(password))) return false
+    const resolved = resolveContext(user)
     if (!resolved) return false
     context.value = resolved
     saveContext(resolved)
@@ -128,15 +135,17 @@ export const useUserStore = defineStore('pwms-user', () => {
    * Cursor/Edge 等不同浏览器各自有 localStorage：壳层 user 已恢复但业务会话缺失时，
    * 页面会按空 orgId + org_only 过滤，表现为「看不到模拟数据」。
    */
-  function ensureAlignedWithShell(shellUsername?: string) {
-    if (!shellUsername) return false
+  function ensureAlignedWithShell(shellUsername?: string, shellToken?: string) {
+    if (!shellUsername || !isCurrentDemoSession(shellUsername, shellToken)) return false
     if (context.value.token && context.value.username === shellUsername) {
       syncSession()
       return true
     }
-    const account = systemAccounts.find((a) => a.username === shellUsername)
-    if (!account) return false
-    return login(account.username, account.password)
+    const resolved = resolveContext(shellUsername)
+    if (!resolved) return false
+    context.value = resolved
+    saveContext(resolved)
+    return true
   }
 
   return {
@@ -149,6 +158,6 @@ export const useUserStore = defineStore('pwms-user', () => {
     logout,
     isLoggedIn,
     syncSession,
-    ensureAlignedWithShell,
+    ensureAlignedWithShell
   }
 })

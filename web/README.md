@@ -5,11 +5,22 @@
 ## 启动
 
 ```bash
-npm install --legacy-peer-deps
+npm ci
 npm run dev
 ```
 
-账号：`admin` / `123456`
+管理员账号：`admin`。本机密码见仓库根目录 `.secrets/pwms-login.json`，该文件不提交到 Git。登录页不再预填密码。
+
+## 构建
+
+```bash
+npm run build
+npm run preview
+```
+
+构建输出为本目录下的 `dist/`，上传其中全部内容至 HTTPS 静态网站根目录。部署到子目录时使用 `npm run build -- --base=/pwms/`。完整项目现状及部署说明见[根目录 README](../README.md)。
+
+当前业务和登录均为前端演示，业务数据存储于浏览器，不包含生产后端。
 
 ## 目录说明
 

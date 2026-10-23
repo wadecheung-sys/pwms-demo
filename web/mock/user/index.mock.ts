@@ -4,21 +4,18 @@ const timeout = 1000
 
 const List: {
   username: string
-  password: string
   role: string
   roleId: string
   permissions: string | string[]
 }[] = [
   {
     username: 'admin',
-    password: 'admin',
     role: 'admin',
     roleId: '1',
     permissions: ['*.*.*']
   },
   {
     username: 'test',
-    password: 'test',
     role: 'test',
     roleId: '2',
     permissions: ['example:dialog:create', 'example:dialog:delete']
@@ -50,30 +47,15 @@ export default [
       }
     }
   },
-  // 登录接口
+  // 模板登录已停用，避免遗留 admin/admin、test/test 与业务密码并行生效。
   {
     url: '/mock/user/login',
     method: 'post',
     timeout,
-    response: ({ body }) => {
-      const data = body
-      let hasUser = false
-      for (const user of List) {
-        if (user.username === data.username && user.password === data.password) {
-          hasUser = true
-          return {
-            code: SUCCESS_CODE,
-            data: user
-          }
-        }
-      }
-      if (!hasUser) {
-        return {
-          code: 500,
-          message: '账号或密码错误'
-        }
-      }
-    }
+    response: () => ({
+      code: 410,
+      message: '模板登录接口已停用，请使用系统登录页'
+    })
   },
   // 退出接口
   {

@@ -1,3 +1,4 @@
+import { demoPassword } from './demo-credentials.mjs'
 import WebSocket from 'ws'
 
 const DEBUG_PORT = Number(process.env.CDP_PORT || 9455)
@@ -52,7 +53,7 @@ async function main() {
     const user = inputs.find((i) => i.type === 'text' || !i.type) || inputs[0];
     const pass = inputs.find((i) => i.type === 'password');
     if (user) { user.value = 'admin'; user.dispatchEvent(new Event('input', { bubbles: true })); }
-    if (pass) { pass.value = '123456'; pass.dispatchEvent(new Event('input', { bubbles: true })); }
+    if (pass) { pass.value = ${JSON.stringify(demoPassword)}; pass.dispatchEvent(new Event('input', { bubbles: true })); }
     const btn = [...document.querySelectorAll('button')].find((b) => /登录/.test(b.textContent || ''));
     btn && btn.click();
     return true;

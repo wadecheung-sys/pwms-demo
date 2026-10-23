@@ -1,3 +1,4 @@
+import { demoPassword } from './demo-credentials.mjs'
 ﻿import WebSocket from 'ws'
 const wsUrl = process.argv[2]
 const ws = new WebSocket(wsUrl)
@@ -56,7 +57,7 @@ const loginResult = await send('Runtime.evaluate', {
     const pass = inputs.find(i => i.type === 'password');
     if (!user || !pass) return { ok: false, reason: 'no-inputs', inputCount: inputs.length };
     user.value = 'admin'; user.dispatchEvent(new Event('input', { bubbles: true }));
-    pass.value = '123456'; pass.dispatchEvent(new Event('input', { bubbles: true }));
+    pass.value = ${JSON.stringify(demoPassword)}; pass.dispatchEvent(new Event('input', { bubbles: true }));
     const btn = Array.from(document.querySelectorAll('button')).find(b => /登录|login|Login/i.test(b.innerText||''));
     if (btn) btn.click();
     return { ok: true, clicked: !!btn, inputCount: inputs.length };

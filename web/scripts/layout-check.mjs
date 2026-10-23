@@ -1,3 +1,4 @@
+import { demoPassword } from './demo-credentials.mjs'
 ﻿import WebSocket from "ws"
 const ws = new WebSocket(process.argv[2])
 let id=0; const pending=new Map()
@@ -6,7 +7,7 @@ ws.on("message",(data)=>{const msg=JSON.parse(data); if(msg.id&&pending.has(msg.
 await new Promise(r=>ws.on("open",r))
 await send("Runtime.enable"); await send("Page.enable"); await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false})
 await send("Page.navigate",{url:"http://localhost:4000/#/login"}); await new Promise(r=>setTimeout(r,3000))
-await send("Runtime.evaluate",{expression:`(()=>{const inputs=[...document.querySelectorAll("input")];const u=inputs.find(i=>i.type!=="password"&&i.type!=="checkbox");const p=inputs.find(i=>i.type==="password");const set=(el,v)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(el,v);el.dispatchEvent(new Event("input",{bubbles:true}))};set(u,"admin");set(p,"123456");[...document.querySelectorAll("button")].find(b=>/登录/.test(b.innerText||""))?.click();return true})()`,returnByValue:true})
+await send("Runtime.evaluate",{expression:`(()=>{const inputs=[...document.querySelectorAll("input")];const u=inputs.find(i=>i.type!=="password"&&i.type!=="checkbox");const p=inputs.find(i=>i.type==="password");const set=(el,v)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(el,v);el.dispatchEvent(new Event("input",{bubbles:true}))};set(u,"admin");set(p,${JSON.stringify(demoPassword)});[...document.querySelectorAll("button")].find(b=>/登录/.test(b.innerText||""))?.click();return true})()`,returnByValue:true})
 await new Promise(r=>setTimeout(r,4000))
 const layout=await send("Runtime.evaluate",{expression:`(()=>{
  const vars=["--left-menu-max-width","--left-menu-min-width","--left-menu-bg-color","--app-content-bg-color","--top-header-bg-color"];

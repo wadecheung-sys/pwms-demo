@@ -1,3 +1,4 @@
+import { demoPassword } from './demo-credentials.mjs'
 /**
  * Headless UI smoke: login + key routes, collect console errors/warnings and visibility signals.
  * Usage: node scripts/pwms-smoke.mjs [wsUrl]
@@ -117,7 +118,7 @@ async function main() {
       el.dispatchEvent(new Event('change', { bubbles: true }))
     }
     set(user, 'admin')
-    set(pass, '123456')
+    set(pass, ${JSON.stringify(demoPassword)})
     const btn = Array.from(document.querySelectorAll('button')).find(b => /登录|login/i.test(b.innerText||''))
     btn && btn.click()
     return true

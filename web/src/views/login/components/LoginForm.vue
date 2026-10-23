@@ -7,7 +7,7 @@ import { useForm } from '@/hooks/web/useForm'
 import { usePermissionStore } from '@/store/modules/permission'
 import { useRouter } from 'vue-router'
 import type { RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
-import { UserType } from '@/api/login/types'
+import { UserLoginType } from '@/api/login/types'
 import { useValidator } from '@/hooks/web/useValidator'
 import { Icon } from '@/components/Icon'
 import { useUserStore } from '@/store/modules/user'
@@ -18,7 +18,6 @@ import { ElMessage } from 'element-plus'
 const { required } = useValidator()
 
 const emit = defineEmits(['to-register'])
-
 
 const userStore = useUserStore()
 const pwmsUserStore = usePwmsUserStore()
@@ -63,7 +62,7 @@ const schema = reactive<FormSchema[]>([
   {
     field: 'password',
     label: t('login.password'),
-    value: '123456',
+    value: '',
     component: 'InputPassword',
     colProps: {
       span: 24
@@ -72,7 +71,8 @@ const schema = reactive<FormSchema[]>([
       style: {
         width: '100%'
       },
-      placeholder: '123456',
+      placeholder: t('login.passwordPlaceholder'),
+      autocomplete: 'current-password',
       // 按下enter键触发登录
       onKeydown: (_e: any) => {
         if (_e.key === 'Enter') {
@@ -93,7 +93,7 @@ const schema = reactive<FormSchema[]>([
           return (
             <>
               <div class="flex justify-between items-center w-[100%]">
-                <ElCheckbox v-model={remember.value} label={t('login.remember')} size="small" />
+                <ElCheckbox v-model={remember.value} label="记住账号" size="small" />
                 <ElLink type="primary" underline={false}>
                   {t('login.forgetPassword')}
                 </ElLink>
@@ -198,8 +198,7 @@ const remember = ref(userStore.getRememberMe)
 const initLoginInfo = () => {
   const loginInfo = userStore.getLoginInfo
   if (loginInfo) {
-    const { username, password } = loginInfo
-    setValues({ username, password })
+    setValues({ username: loginInfo.username, password: '' })
   }
 }
 onMounted(() => {
@@ -229,14 +228,15 @@ watch(
 
 // 登录（对接专业仓业务账号）
 const signIn = async () => {
+  if (loading.value) return
   const formRef = await getElFormExpose()
   await formRef?.validate(async (isValid) => {
     if (isValid) {
       loading.value = true
-      const formData = await getFormData<UserType>()
+      const formData = await getFormData<UserLoginType>()
 
       try {
-        const ok = pwmsUserStore.login(formData.username, formData.password)
+        const ok = await pwmsUserStore.login(formData.username, formData.password)
         if (!ok) {
           ElMessage.error('账号或密码错误')
           return
@@ -244,8 +244,7 @@ const signIn = async () => {
 
         if (unref(remember)) {
           userStore.setLoginInfo({
-            username: formData.username,
-            password: formData.password
+            username: formData.username
           })
         } else {
           userStore.setLoginInfo(undefined)
@@ -253,7 +252,6 @@ const signIn = async () => {
         userStore.setRememberMe(unref(remember))
         userStore.setUserInfo({
           username: formData.username,
-          password: formData.password,
           role: pwmsUserStore.context.roleName || 'user',
           roleId: pwmsUserStore.context.roleId || 'admin'
         })
@@ -265,6 +263,8 @@ const signIn = async () => {
         })
         permissionStore.setIsAddRouters(true)
         push({ path: redirect.value || '/dashboard/analysis' })
+      } catch (error) {
+        ElMessage.error(error instanceof Error ? error.message : '登录失败，请稍后重试')
       } finally {
         loading.value = false
       }

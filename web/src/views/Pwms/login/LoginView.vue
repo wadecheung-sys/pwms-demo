@@ -10,46 +10,51 @@ const loading = ref(false)
 
 const form = reactive({
   username: 'admin',
-  password: '123456',
+  password: ''
 })
 
 const highlights = [
   {
     icon: 'OfficeBuilding',
     title: '主数据统一',
-    desc: '生产仓地点、备品备件、仪器仪表、工器具分类建档与关联维护',
+    desc: '生产仓地点、备品备件、仪器仪表、工器具分类建档与关联维护'
   },
   {
     icon: 'Lock',
     title: '分级权限管控',
-    desc: '按省、市、县、班组组织体系实现数据可见范围与操作权限隔离',
+    desc: '按省、市、县、班组组织体系实现数据可见范围与操作权限隔离'
   },
   {
     icon: 'Refresh',
     title: '业务全程留痕',
-    desc: '台账建档、出入库审批确认、故障维修、盘点过账与报废归档形成完整闭环',
+    desc: '台账建档、出入库审批确认、故障维修、盘点过账与报废归档形成完整闭环'
   },
   {
     icon: 'Monitor',
     title: '智慧仓监测',
-    desc: '温湿度、烟感等环境数据接入，支撑仓室运行状态感知',
-  },
+    desc: '温湿度、烟感等环境数据接入，支撑仓室运行状态感知'
+  }
 ]
 
 async function handleLogin() {
+  if (loading.value) return
   if (!form.username || !form.password) {
     ElMessage.warning('请输入账号和密码')
     return
   }
   loading.value = true
-  await new Promise((r) => setTimeout(r, 400))
-  const ok = userStore.login(form.username, form.password)
-  loading.value = false
-  if (ok) {
-    ElMessage.success('登录成功')
-    router.push('/dashboard')
-  } else {
-    ElMessage.error('账号或密码错误')
+  try {
+    const ok = await userStore.login(form.username, form.password)
+    if (ok) {
+      ElMessage.success('登录成功')
+      router.push('/dashboard')
+    } else {
+      ElMessage.error('账号或密码错误')
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '登录失败，请稍后重试')
+  } finally {
+    loading.value = false
   }
 }
 </script>
@@ -66,7 +71,12 @@ async function handleLogin() {
       </div>
       <el-form :model="form" label-position="top" @submit.prevent="handleLogin">
         <el-form-item label="账号">
-          <el-input v-model="form.username" placeholder="请输入账号" prefix-icon="User" size="large" />
+          <el-input
+            v-model="form.username"
+            placeholder="请输入账号"
+            prefix-icon="User"
+            size="large"
+          />
         </el-form-item>
         <el-form-item label="密码">
           <el-input
@@ -79,7 +89,13 @@ async function handleLogin() {
             @keyup.enter="handleLogin"
           />
         </el-form-item>
-        <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
+        <el-button
+          type="primary"
+          size="large"
+          class="login-btn"
+          :loading="loading"
+          @click="handleLogin"
+        >
           登 录
         </el-button>
       </el-form>
@@ -88,7 +104,9 @@ async function handleLogin() {
       <div class="bg-content">
         <p class="bg-eyebrow">POWER GRID · WAREHOUSE</p>
         <h2>数字化生产专业仓管理</h2>
-        <p class="bg-lead">面向电力生产专业的仓室与物资一体化管理平台，支撑各级单位协同作业与精细管控。</p>
+        <p class="bg-lead"
+          >面向电力生产专业的仓室与物资一体化管理平台，支撑各级单位协同作业与精细管控。</p
+        >
         <div class="feature-grid">
           <div v-for="item in highlights" :key="item.title" class="feature-card">
             <div class="feature-card__icon">

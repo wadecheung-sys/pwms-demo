@@ -14,7 +14,7 @@ interface UserState {
   token: string
   roleRouters?: string[] | AppCustomRouteRecordRaw[]
   rememberMe: boolean
-  loginInfo?: UserLoginType
+  loginInfo?: Pick<UserLoginType, 'username'>
 }
 
 export const useUserStore = defineStore('user', {
@@ -45,7 +45,7 @@ export const useUserStore = defineStore('user', {
     getRememberMe(): boolean {
       return this.rememberMe
     },
-    getLoginInfo(): UserLoginType | undefined {
+    getLoginInfo(): Pick<UserLoginType, 'username'> | undefined {
       return this.loginInfo
     }
   },
@@ -58,6 +58,8 @@ export const useUserStore = defineStore('user', {
     },
     setUserInfo(userInfo?: UserType) {
       this.userInfo = userInfo
+        ? { username: userInfo.username, role: userInfo.role, roleId: userInfo.roleId }
+        : undefined
     },
     setRoleRouters(roleRouters: string[] | AppCustomRouteRecordRaw[]) {
       this.roleRouters = roleRouters
@@ -97,11 +99,18 @@ export const useUserStore = defineStore('user', {
     setRememberMe(rememberMe: boolean) {
       this.rememberMe = rememberMe
     },
-    setLoginInfo(loginInfo: UserLoginType | undefined) {
-      this.loginInfo = loginInfo
+    setLoginInfo(loginInfo: Pick<UserLoginType, 'username'> | undefined) {
+      this.loginInfo = loginInfo ? { username: loginInfo.username } : undefined
     }
   },
-  persist: true
+  persist: {
+    afterRestore: ({ store }) => {
+      // 清除旧版本持久化的明文密码，只保留账号与会话信息。
+      store.setUserInfo(store.userInfo)
+      store.setLoginInfo(store.loginInfo)
+      store.$persist()
+    }
+  }
 })
 
 export const useUserStoreWithOut = () => {

@@ -20,9 +20,17 @@ router.beforeEach(async (to, from, next) => {
   const appStore = useAppStoreWithOut()
   const userStore = useUserStoreWithOut()
   const pwmsUserStore = usePwmsUserStore()
+  if (
+    userStore.getUserInfo &&
+    !pwmsUserStore.ensureAlignedWithShell(userStore.getUserInfo.username, userStore.getToken)
+  ) {
+    userStore.setToken('')
+    userStore.setUserInfo(undefined)
+    userStore.setRoleRouters([])
+    permissionStore.setIsAddRouters(false)
+    pwmsUserStore.logout()
+  }
   if (userStore.getUserInfo) {
-    // 壳层已登录时补齐业务会话，避免跨浏览器/刷新后数据范围为空
-    pwmsUserStore.ensureAlignedWithShell(userStore.getUserInfo.username)
     if (to.path === '/login') {
       next({ path: '/' })
     } else {
